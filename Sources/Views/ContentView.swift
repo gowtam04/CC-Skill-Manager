@@ -6,21 +6,21 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(viewModel: viewModel)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            viewModel.isShowingAddSheet = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .help("Add Skill")
-                    }
-                }
         } detail: {
             if viewModel.isEditing {
                 EditorView(viewModel: viewModel)
             } else {
                 DetailPanelView(viewModel: viewModel)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    viewModel.isShowingAddSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Add Skill")
             }
         }
         .task {

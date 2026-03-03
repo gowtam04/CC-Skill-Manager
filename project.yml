@@ -1,0 +1,44 @@
+name: CCSkillManager
+options:
+  bundleIdPrefix: com.optiwise
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  minimumXcodeGenVersion: "2.38"
+
+settings:
+  base:
+    SWIFT_VERSION: "6"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  CCSkillManager:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.optiwise.cc-skill-manager
+        PRODUCT_NAME: "CC Skill Manager"
+        PRODUCT_MODULE_NAME: CCSkillManager
+        INFOPLIST_GENERATION_MODE: GeneratedByXcode
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+    scheme:
+      testTargets:
+        - CCSkillManagerTests
+
+  CCSkillManagerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+    dependencies:
+      - target: CCSkillManager
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.optiwise.cc-skill-manager-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CC Skill Manager.app/Contents/MacOS/CC Skill Manager"
+        BUNDLE_LOADER: "$(TEST_HOST)"

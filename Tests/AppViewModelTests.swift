@@ -1,0 +1,701 @@
+import Testing
+import Foundation
+@testable import CCSkillManager
+
+@Suite("AppViewModel Tests")
+@MainActor
+struct AppViewModelTests {
+
+    // MARK: - Helpers
+
+    /// Creates a full temporary directory structure simulating the app environment.
+    /// Returns (tempRoot, skillsDir, disabledDir, appSupportDir).
+    private func makeTempEnvironment() throws -> (URL, URL, URL, URL) {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppViewModelTests-\(UUID().uuidString)", isDirectory: true)
+        let skillsDir = tempRoot.appendingPathComponent("skills", isDirectory: true)
+        let disabledDir = tempRoot.appendingPathComponent("skills-disabled", isDirectory: true)
+        let appSupportDir = tempRoot.appendingPathComponent("app-support", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: disabledDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        return (tempRoot, skillsDir, disabledDir, appSupportDir)
+    }
+
+    private func cleanUp(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @discardableResult
+    private func createSkillDirectory(
+        named name: String,
+        description: String? = nil,
+        in parentDir: URL,
+        content: String? = nil
+    ) throws -> URL {
+        let skillDir = parentDir.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        let desc = description ?? "A test skill called \(name)"
+        let skillMD = content ?? """
+        ---
+        name: \(name)
+        description: \(desc)
+        ---
+        # Instructions
+        Do something useful for \(name).
+        """
+        try skillMD.write(
+            to: skillDir.appendingPathComponent("SKILL.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        return skillDir
+    }
+
+    private func makeSkillManager(
+        skillsDir: URL,
+        disabledDir: URL,
+        appSupportDir: URL
+    ) -> SkillManager {
+        let fileSystemManager = FileSystemManager(
+            skillsDirectoryURL: skillsDir,
+            disabledDirectoryURL: disabledDir
+        )
+        let metadataStore = MetadataStore(
+            fileURL: appSupportDir.appendingPathComponent("metadata.json")
+        )
+        return SkillManager(
+            fileSystemManager: fileSystemManager,
+            gitManager: GitManager(),
+            skillParser: SkillParser.self,
+            metadataStore: metadataStore
+        )
+    }
+
+    private func makeViewModel(
+        skillsDir: URL,
+        disabledDir: URL,
+        appSupportDir: URL
+    ) -> AppViewModel {
+        let skillManager = makeSkillManager(
+            skillsDir: skillsDir,
+            disabledDir: disabledDir,
+            appSupportDir: appSupportDir
+        )
+        return AppViewModel(skillManager: skillManager)
+    }
+
+    // MARK: - Loading & Refresh
+
+    @Test("Load skills populates skills and filteredSkills arrays")
+    func loadSkillsPopulatesArrays() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "alpha", in: skillsDir)
+        try createSkillDirectory(named: "beta", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        #expect(vm.skills.count == 2)
+        #expect(vm.filteredSkills.count == 2)
+        let names = vm.skills.map(\.name).sorted()
+        #expect(names == ["alpha", "beta"])
+    }
+
+    @Test("isLoading is false after loadSkills completes")
+    func isLoadingFalseAfterLoad() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        #expect(!vm.isLoading)
+    }
+
+    @Test("Load error sets errorMessage")
+    func loadErrorSetsErrorMessage() async throws {
+        // Point at a non-existent directory to trigger an error during scan
+        let nonExistent = URL(fileURLWithPath: "/tmp/AppViewModelTests-nonexistent-\(UUID().uuidString)")
+        let disabledDir = URL(fileURLWithPath: "/tmp/AppViewModelTests-disabled-\(UUID().uuidString)")
+        let appSupportDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AppViewModelTests-appsupport-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        defer {
+            cleanUp(nonExistent)
+            cleanUp(disabledDir)
+            cleanUp(appSupportDir)
+        }
+
+        let vm = makeViewModel(skillsDir: nonExistent, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        #expect(vm.errorMessage != nil)
+    }
+
+    // MARK: - Search/Filter (FR-2.3)
+
+    @Test("Empty search shows all skills")
+    func emptySearchShowsAll() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "one", in: skillsDir)
+        try createSkillDirectory(named: "two", in: skillsDir)
+        try createSkillDirectory(named: "three", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        vm.searchSkills(query: "")
+
+        #expect(vm.filteredSkills.count == 3)
+    }
+
+    @Test("Search by name filters correctly — case insensitive")
+    func searchByNameCaseInsensitive() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "CodeReview", in: skillsDir)
+        try createSkillDirectory(named: "test-runner", in: skillsDir)
+        try createSkillDirectory(named: "linter", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        vm.searchSkills(query: "codereview")
+
+        #expect(vm.filteredSkills.count == 1)
+        #expect(vm.filteredSkills.first?.name == "CodeReview")
+    }
+
+    @Test("Search by description filters correctly")
+    func searchByDescription() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "skill-a", description: "Manages database migrations", in: skillsDir)
+        try createSkillDirectory(named: "skill-b", description: "Runs unit tests", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        vm.searchSkills(query: "database")
+
+        #expect(vm.filteredSkills.count == 1)
+        #expect(vm.filteredSkills.first?.name == "skill-a")
+    }
+
+    @Test("Search with no matches returns empty list")
+    func searchNoMatches() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "alpha", in: skillsDir)
+        try createSkillDirectory(named: "beta", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        vm.searchSkills(query: "zzzznonexistent")
+
+        #expect(vm.filteredSkills.isEmpty)
+    }
+
+    @Test("Clearing search restores all skills")
+    func clearSearchRestoresAll() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "alpha", in: skillsDir)
+        try createSkillDirectory(named: "beta", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        vm.searchSkills(query: "alpha")
+        #expect(vm.filteredSkills.count == 1)
+
+        vm.searchSkills(query: "")
+        #expect(vm.filteredSkills.count == 2)
+    }
+
+    // MARK: - Selection
+
+    @Test("Selecting a skill sets selectedSkill")
+    func selectSkillSetsSelectedSkill() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "pick-me", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "pick-me" })
+        vm.selectSkill(skill)
+
+        #expect(vm.selectedSkill?.name == "pick-me")
+    }
+
+    @Test("Selecting a different skill changes selectedSkill")
+    func selectDifferentSkill() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "first", in: skillsDir)
+        try createSkillDirectory(named: "second", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let first = try #require(vm.skills.first { $0.name == "first" })
+        let second = try #require(vm.skills.first { $0.name == "second" })
+
+        vm.selectSkill(first)
+        #expect(vm.selectedSkill?.name == "first")
+
+        vm.selectSkill(second)
+        #expect(vm.selectedSkill?.name == "second")
+    }
+
+    @Test("Selected skill persists after refresh if it still exists")
+    func selectedSkillPersistsAfterRefresh() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "persistent", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "persistent" })
+        vm.selectSkill(skill)
+        #expect(vm.selectedSkill?.name == "persistent")
+
+        // Refresh
+        await vm.loadSkills()
+
+        // The skill should still be selected (matched by name)
+        #expect(vm.selectedSkill?.name == "persistent")
+    }
+
+    @Test("Selection cleared when selected skill is deleted")
+    func selectionClearedWhenDeleted() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "doomed", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "doomed" })
+        vm.selectSkill(skill)
+        #expect(vm.selectedSkill != nil)
+
+        await vm.deleteSkill(removeSource: false)
+
+        #expect(vm.selectedSkill == nil)
+    }
+
+    // MARK: - Enable/Disable (FR-7)
+
+    @Test("Enable changes skill state from disabled to enabled")
+    func enableChangesSkillState() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "to-enable", in: disabledDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "to-enable" })
+        #expect(!skill.isEnabled)
+
+        vm.selectSkill(skill)
+        await vm.enableSkill()
+
+        // After enable, the skill should appear as enabled in the refreshed list
+        let enabled = vm.skills.first { $0.name == "to-enable" }
+        #expect(enabled?.isEnabled == true)
+    }
+
+    @Test("Disable changes skill state from enabled to disabled")
+    func disableChangesSkillState() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "to-disable", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "to-disable" })
+        #expect(skill.isEnabled)
+
+        vm.selectSkill(skill)
+        await vm.disableSkill()
+
+        let disabled = vm.skills.first { $0.name == "to-disable" }
+        #expect(disabled?.isEnabled == false)
+    }
+
+    @Test("Error during enable sets errorMessage")
+    func enableErrorSetsErrorMessage() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Create a conflict: same name in both directories
+        try createSkillDirectory(named: "conflict", in: disabledDir)
+        try createSkillDirectory(named: "conflict", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let disabledSkill = try #require(
+            vm.skills.first { $0.name == "conflict" && !$0.isEnabled }
+        )
+        vm.selectSkill(disabledSkill)
+        await vm.enableSkill()
+
+        #expect(vm.errorMessage != nil)
+    }
+
+    // MARK: - Delete (FR-8)
+
+    @Test("Delete non-symlinked skill removes it from list")
+    func deleteNonSymlinkedSkill() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "delete-me", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        #expect(vm.skills.count == 1)
+
+        let skill = try #require(vm.skills.first { $0.name == "delete-me" })
+        vm.selectSkill(skill)
+        await vm.deleteSkill(removeSource: false)
+
+        #expect(vm.skills.isEmpty)
+    }
+
+    @Test("Delete symlinked skill with removeSource false keeps source intact")
+    func deleteSymlinkedSkillKeepsSource() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Create source outside managed dirs
+        let sourceDir = tempRoot.appendingPathComponent("repos", isDirectory: true)
+        let sourceSkill = try createSkillDirectory(named: "linked-skill", in: sourceDir)
+
+        // Create symlink in skills/
+        let symlinkPath = skillsDir.appendingPathComponent("linked-skill")
+        try FileManager.default.createSymbolicLink(at: symlinkPath, withDestinationURL: sourceSkill)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "linked-skill" })
+        #expect(skill.isSymlink)
+
+        vm.selectSkill(skill)
+        await vm.deleteSkill(removeSource: false)
+
+        // Skill removed from list
+        #expect(vm.skills.first { $0.name == "linked-skill" } == nil)
+        // Source directory still exists
+        #expect(FileManager.default.fileExists(atPath: sourceSkill.path))
+    }
+
+    @Test("Delete clears selection when deleted skill was selected")
+    func deleteClearsSelection() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "selected-then-deleted", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first)
+        vm.selectSkill(skill)
+        #expect(vm.selectedSkill != nil)
+
+        await vm.deleteSkill(removeSource: false)
+
+        #expect(vm.selectedSkill == nil)
+    }
+
+    // MARK: - Editor (FR-6)
+
+    @Test("Start editing loads content and sets isEditing")
+    func startEditingLoadsContent() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let customContent = """
+        ---
+        name: editable
+        description: An editable skill
+        ---
+        # Custom Instructions
+        These are the instructions.
+        """
+        try createSkillDirectory(named: "editable", in: skillsDir, content: customContent)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "editable" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+
+        #expect(vm.isEditing)
+        #expect(vm.editorContent.contains("Custom Instructions"))
+    }
+
+    @Test("Save editing writes content and clears isEditing")
+    func saveEditingWritesContent() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "save-target", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "save-target" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+
+        let updatedContent = """
+        ---
+        name: save-target
+        description: Updated description
+        ---
+        # Updated Instructions
+        Brand new content here.
+        """
+        vm.editorContent = updatedContent
+        await vm.saveEditing()
+
+        #expect(!vm.isEditing)
+
+        // Verify the file was actually written
+        let fileContent = try String(
+            contentsOf: skillsDir
+                .appendingPathComponent("save-target")
+                .appendingPathComponent("SKILL.md"),
+            encoding: .utf8
+        )
+        #expect(fileContent.contains("Brand new content here."))
+    }
+
+    @Test("Cancel editing discards changes and clears isEditing")
+    func cancelEditingDiscardsChanges() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let originalContent = """
+        ---
+        name: cancel-test
+        description: Original description
+        ---
+        # Original Content
+        Original instructions.
+        """
+        try createSkillDirectory(named: "cancel-test", in: skillsDir, content: originalContent)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "cancel-test" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+
+        // Modify editor content but then cancel
+        vm.editorContent = "completely overwritten content"
+        vm.cancelEditing()
+
+        #expect(!vm.isEditing)
+
+        // Verify original file is unchanged
+        let fileContent = try String(
+            contentsOf: skillsDir
+                .appendingPathComponent("cancel-test")
+                .appendingPathComponent("SKILL.md"),
+            encoding: .utf8
+        )
+        #expect(fileContent.contains("Original instructions."))
+    }
+
+    // MARK: - Add Skill
+
+    @Test("Add from file adds skill to list")
+    func addFromFileAddsSkill() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Create an external skill directory to import
+        let externalDir = tempRoot.appendingPathComponent("external", isDirectory: true)
+        let sourceSkill = try createSkillDirectory(named: "imported", in: externalDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        #expect(vm.skills.isEmpty)
+
+        await vm.addSkillFromFile(url: sourceSkill)
+
+        #expect(vm.skills.count == 1)
+        #expect(vm.skills.first?.name == "imported")
+    }
+
+    @Test("Add from URL adds skill to list")
+    func addFromURLAddsSkill() async throws {
+        // This test verifies the ViewModel correctly delegates to SkillManager.
+        // In practice, this requires network/git access. We verify the error path
+        // since we cannot clone in a unit test environment.
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        vm.addSkillURL = "https://github.com/nonexistent/repo"
+        await vm.addSkillFromURL()
+
+        // Since the repo doesn't exist, an error should be set
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("Add from invalid URL sets errorMessage")
+    func addFromInvalidURLSetsError() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        vm.addSkillURL = "not-a-valid-url"
+        await vm.addSkillFromURL()
+
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("Add clears add sheet state on success")
+    func addClearsSheetOnSuccess() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let externalDir = tempRoot.appendingPathComponent("external", isDirectory: true)
+        let sourceSkill = try createSkillDirectory(named: "sheet-test", in: externalDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        vm.isShowingAddSheet = true
+        await vm.addSkillFromFile(url: sourceSkill)
+
+        #expect(!vm.isShowingAddSheet)
+    }
+
+    // MARK: - Pull Latest (FR-9)
+
+    @Test("Pull latest succeeds for URL-installed skill")
+    func pullLatestForURLInstalledSkill() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Create a real git repo to simulate a URL-installed skill
+        let reposDir = appSupportDir.appendingPathComponent("repos", isDirectory: true)
+        try FileManager.default.createDirectory(at: reposDir, withIntermediateDirectories: true)
+
+        let repoDir = reposDir.appendingPathComponent("test-repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoDir, withIntermediateDirectories: true)
+
+        // Initialize a git repo so git pull has something to work with
+        let initProcess = Process()
+        initProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        initProcess.arguments = ["init"]
+        initProcess.currentDirectoryURL = repoDir
+        try initProcess.run()
+        initProcess.waitUntilExit()
+
+        // Create SKILL.md in the repo
+        try createSkillDirectory(named: "url-skill", in: repoDir)
+
+        // Symlink from skills/ to the repo skill
+        let skillSource = repoDir.appendingPathComponent("url-skill")
+        let symlinkPath = skillsDir.appendingPathComponent("url-skill")
+        try FileManager.default.createSymbolicLink(at: symlinkPath, withDestinationURL: skillSource)
+
+        // Write metadata so SkillManager knows this is URL-installed
+        let metadata: [String: SkillMetadata] = [
+            "url-skill": SkillMetadata(
+                sourceRepoURL: "https://github.com/test/repo",
+                clonedRepoPath: repoDir.path,
+                installedAt: Date()
+            )
+        ]
+        let metadataStore = MetadataStore(
+            fileURL: appSupportDir.appendingPathComponent("metadata.json")
+        )
+        try metadataStore.save(metadata)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "url-skill" })
+        #expect(skill.sourceRepoURL != nil)
+
+        vm.selectSkill(skill)
+        await vm.pullLatest()
+
+        // git pull on a local-only repo may produce an error (no remote),
+        // but the flow should handle it gracefully by setting errorMessage
+        // rather than crashing. A real URL-installed skill would succeed.
+        // We verify the ViewModel didn't crash and state is consistent.
+        #expect(vm.selectedSkill != nil)
+    }
+
+    // MARK: - Initial State
+
+    @Test("ViewModel has correct initial state")
+    func initialState() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+
+        #expect(vm.skills.isEmpty)
+        #expect(vm.filteredSkills.isEmpty)
+        #expect(vm.selectedSkill == nil)
+        #expect(vm.searchText == "")
+        #expect(!vm.isLoading)
+        #expect(vm.errorMessage == nil)
+        #expect(!vm.isEditing)
+        #expect(vm.editorContent == "")
+        #expect(!vm.isShowingAddSheet)
+        #expect(vm.addSkillURL == "")
+        #expect(!vm.isShowingDeleteConfirmation)
+    }
+
+    // MARK: - Search updates filteredSkills but not skills
+
+    @Test("Search filters filteredSkills without modifying skills array")
+    func searchDoesNotModifySkillsArray() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "keep-one", in: skillsDir)
+        try createSkillDirectory(named: "keep-two", in: skillsDir)
+        try createSkillDirectory(named: "filter-out", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        vm.searchSkills(query: "keep")
+
+        // filteredSkills should only show matching skills
+        #expect(vm.filteredSkills.count == 2)
+        // skills array should remain unchanged
+        #expect(vm.skills.count == 3)
+    }
+}

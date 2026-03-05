@@ -32,7 +32,7 @@ struct SettingsView: View {
                 HStack {
                     Button("Sync Now") {
                         Task {
-                            await viewModel.triggerSync()
+                            await viewModel.triggerSync(force: true)
                         }
                     }
                     .disabled(!isSyncEnabled || viewModel.isSyncing)
@@ -80,7 +80,7 @@ struct SettingsView: View {
             isSyncEnabled = true
             viewModel.configureSyncFolder(url)
             Task {
-                await viewModel.triggerSync()
+                await viewModel.triggerSync(force: true)
             }
         }
     }

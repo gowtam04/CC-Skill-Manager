@@ -40,9 +40,12 @@ final class AppViewModel {
     var isSyncing: Bool = false
     var lastSyncDate: Date?
     var syncConflicts: [SyncConflict] = []
-    var isShowingSyncConflictAlert: Bool = false
+    var isShowingSyncConflictSheet: Bool = false
+    var isResolvingConflict: Bool = false
 
     // MARK: - Private
+
+    private static let minimumSyncInterval: TimeInterval = 30
 
     private let skillManager: SkillManager
     private(set) var syncManager: SyncManager?
@@ -285,8 +288,14 @@ final class AppViewModel {
 
     // MARK: - Sync
 
-    func triggerSync() async {
+    func triggerSync(force: Bool = false) async {
         guard let syncManager, syncManager.isSyncConfigured(), !isSyncing else { return }
+
+        if !force, let lastSync = lastSyncDate,
+           Date().timeIntervalSince(lastSync) < Self.minimumSyncInterval {
+            return
+        }
+
         isSyncing = true
         defer { isSyncing = false }
 
@@ -296,7 +305,19 @@ final class AppViewModel {
 
             if !report.conflicts.isEmpty {
                 syncConflicts = report.conflicts
-                isShowingSyncConflictAlert = true
+                isShowingSyncConflictSheet = true
+            }
+
+            if !report.errors.isEmpty {
+                let errorDetails = report.errors.map { "\($0.skillName): \($0.message)" }
+                errorMessage = "Sync completed with errors:\n\(errorDetails.joined(separator: "\n"))"
+            }
+
+            if !report.debugSummary.isEmpty {
+                print("[SyncDebug] \(report.debugSummary)")
+                print("[SyncDebug] Copied to local: \(report.copiedToLocal)")
+                print("[SyncDebug] Copied to remote: \(report.copiedToRemote)")
+                print("[SyncDebug] Errors: \(report.errors.map { "\($0.skillName): \($0.message)" })")
             }
 
             // Reload skills to reflect any changes from sync
@@ -319,8 +340,25 @@ final class AppViewModel {
         self.syncManager = syncManager
     }
 
+    func resolveConflict(_ conflict: SyncConflict, resolution: ConflictResolution) async {
+        guard let syncManager else { return }
+        isResolvingConflict = true
+        defer { isResolvingConflict = false }
+
+        do {
+            try await syncManager.resolveConflict(skillName: conflict.skillName, resolution: resolution)
+            syncConflicts.removeAll { $0.id == conflict.id }
+            if syncConflicts.isEmpty {
+                isShowingSyncConflictSheet = false
+            }
+            await loadSkills()
+        } catch {
+            errorMessage = "Failed to resolve conflict: \(error.localizedDescription)"
+        }
+    }
+
     func dismissSyncConflicts() {
         syncConflicts = []
-        isShowingSyncConflictAlert = false
+        isShowingSyncConflictSheet = false
     }
 }

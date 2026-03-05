@@ -4,6 +4,14 @@ struct SyncManifest: Codable, Sendable {
     var lastSyncDate: Date
     var lastSyncDeviceID: String
     var skills: [String: SyncManifestSkillEntry]
+    var knownDeviceIDs: Set<String>
+
+    init(lastSyncDate: Date, lastSyncDeviceID: String, skills: [String: SyncManifestSkillEntry], knownDeviceIDs: Set<String> = []) {
+        self.lastSyncDate = lastSyncDate
+        self.lastSyncDeviceID = lastSyncDeviceID
+        self.skills = skills
+        self.knownDeviceIDs = knownDeviceIDs
+    }
 }
 
 struct SyncManifestSkillEntry: Codable, Sendable {
@@ -17,14 +25,37 @@ struct SyncManifestFileEntry: Codable, Sendable {
     var modificationDate: Date
 }
 
-struct SyncConflict: Sendable {
+struct SyncLockFile: Codable, Sendable {
+    let deviceID: String
+    let deviceName: String
+    let acquiredAt: Date
+}
+
+struct SyncConflict: Identifiable, Sendable {
+    let id = UUID()
     let skillName: String
     let reason: SyncConflictReason
+    let localModificationDate: Date?
+    let remoteModificationDate: Date?
+
+    init(skillName: String, reason: SyncConflictReason, localModificationDate: Date? = nil, remoteModificationDate: Date? = nil) {
+        self.skillName = skillName
+        self.reason = reason
+        self.localModificationDate = localModificationDate
+        self.remoteModificationDate = remoteModificationDate
+    }
 }
 
 enum SyncConflictReason: Sendable {
     case deletedRemotelyButModifiedLocally
     case deletedLocallyButModifiedRemotely
+    case bothModified
+    case enabledStateConflict
+}
+
+enum ConflictResolution: Sendable {
+    case keepLocal
+    case keepRemote
 }
 
 struct SyncReport: Sendable {
@@ -34,6 +65,7 @@ struct SyncReport: Sendable {
     var deletedFromLocal: [String] = []
     var conflicts: [SyncConflict] = []
     var errors: [SyncError] = []
+    var debugSummary: String = ""
 }
 
 struct SyncError: Sendable {

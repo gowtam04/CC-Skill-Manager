@@ -30,25 +30,12 @@ struct CCSkillManagerApp: App {
             metadataStore: metadataStore
         )
 
-        let syncSettings = SyncSettings()
-        let syncManager = SyncManager(
-            localSkillsURL: skillsDir,
-            localDisabledURL: disabledDir,
-            syncSettings: syncSettings
-        )
-
-        _viewModel = State(initialValue: AppViewModel(
-            skillManager: skillManager,
-            syncManager: syncManager
-        ))
+        _viewModel = State(initialValue: AppViewModel(skillManager: skillManager))
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
-        }
-        Settings {
-            SettingsView(viewModel: viewModel)
         }
     }
 }

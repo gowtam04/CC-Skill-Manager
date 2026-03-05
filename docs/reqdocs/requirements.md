@@ -1,8 +1,8 @@
-# CC Skill Manager — Requirements Document
+# Agent Skill Manager — Requirements Document
 
 ## Overview
 
-CC Skill Manager is a native macOS desktop application for managing Claude Code skills. It provides a graphical interface to view, add, edit, enable/disable, and delete skills installed in `~/.claude/skills/`. The app replaces manual file system operations with a cohesive UI, making skill management accessible without terminal commands.
+Agent Skill Manager is a native macOS desktop application for managing Claude Code skills. It provides a graphical interface to view, add, edit, enable/disable, and delete skills installed in `~/.claude/skills/`. The app replaces manual file system operations with a cohesive UI, making skill management accessible without terminal commands.
 
 **Target user:** Claude Code power users who install and customize skills regularly.
 
@@ -93,11 +93,11 @@ CC Skill Manager is a native macOS desktop application for managing Claude Code 
 
 1. User clicks "Add Skill" and selects the URL/repo option.
 2. A text field accepts a public Git repository URL (HTTPS).
-3. The app clones the repository into `~/Library/Application Support/CC-Skill-Manager/repos/{repo-name}/`.
+3. The app clones the repository into `~/Library/Application Support/Agent-Skill-Manager/repos/{repo-name}/`.
 4. The app scans the cloned repo for directories containing `SKILL.md` files.
 5. If exactly one skill is found, it proceeds automatically. If multiple skills are found, the user selects which one(s) to install.
 6. For each selected skill, the app creates a **symlink** in `~/.claude/skills/{skill-name}` pointing to the skill directory inside the cloned repo.
-7. The app stores metadata associating the installed skill with its source repo URL (for the "Pull Latest" feature). Metadata is stored in `~/Library/Application Support/CC-Skill-Manager/metadata.json`.
+7. The app stores metadata associating the installed skill with its source repo URL (for the "Pull Latest" feature). Metadata is stored in `~/Library/Application Support/Agent-Skill-Manager/metadata.json`.
 8. The sidebar refreshes to show the newly added skill(s).
 9. Errors (invalid URL, clone failure, no SKILL.md found) are shown as alert dialogs with descriptive messages.
 
@@ -134,7 +134,7 @@ CC Skill Manager is a native macOS desktop application for managing Claude Code 
      - "Remove link only" — deletes just the symlink, leaves the source intact.
      - "Remove link and source" — deletes the symlink AND the source directory it points to.
      - "Cancel" — abort.
-   - For URL-installed skills, "Remove link and source" also deletes the cloned repo from `~/Library/Application Support/CC-Skill-Manager/repos/` and removes the metadata entry.
+   - For URL-installed skills, "Remove link and source" also deletes the cloned repo from `~/Library/Application Support/Agent-Skill-Manager/repos/` and removes the metadata entry.
 4. After deletion, the sidebar refreshes and selects the next skill in the list (or shows an empty state).
 
 ### FR-9: Pull Latest (Manual Update)
@@ -160,7 +160,7 @@ CC Skill Manager is a native macOS desktop application for managing Claude Code 
 
 ### NFR-3: Data Safety
 
-- The app never modifies files outside of `~/.claude/skills/`, `~/.claude/skills-disabled/`, and `~/Library/Application Support/CC-Skill-Manager/` — except when the user explicitly chooses "Remove link and source" for a symlinked skill.
+- The app never modifies files outside of `~/.claude/skills/`, `~/.claude/skills-disabled/`, and `~/Library/Application Support/Agent-Skill-Manager/` — except when the user explicitly chooses "Remove link and source" for a symlinked skill.
 - All destructive operations (delete, overwrite) require user confirmation.
 - The editor warns before overwriting externally-modified files.
 
@@ -193,20 +193,20 @@ CC Skill Manager is a native macOS desktop application for managing Claude Code 
   "skills": {
     "skill-name": {
       "sourceRepoURL": "https://github.com/user/repo",
-      "clonedRepoPath": "/Users/.../Application Support/CC-Skill-Manager/repos/repo",
+      "clonedRepoPath": "/Users/.../Application Support/Agent-Skill-Manager/repos/repo",
       "installedAt": "2026-03-02T12:00:00Z"
     }
   }
 }
 ```
 
-Stored at `~/Library/Application Support/CC-Skill-Manager/metadata.json`. Read on launch, updated on install/delete.
+Stored at `~/Library/Application Support/Agent-Skill-Manager/metadata.json`. Read on launch, updated on install/delete.
 
 ## UI Layout
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  CC Skill Manager                                    [+ Add]     │
+│  Agent Skill Manager                                    [+ Add]     │
 ├──────────────────┬───────────────────────────────────────────────┤
 │ [🔍 Search...  ] │                                               │
 │                  │  Skill Name                                   │
@@ -268,8 +268,8 @@ Stored at `~/Library/Application Support/CC-Skill-Manager/metadata.json`. Read o
 |------|---------|
 | `~/.claude/skills/` | Active (enabled) skills |
 | `~/.claude/skills-disabled/` | Disabled skills (managed by this app) |
-| `~/Library/Application Support/CC-Skill-Manager/repos/` | Cloned Git repos for URL-installed skills |
-| `~/Library/Application Support/CC-Skill-Manager/metadata.json` | Install metadata (source URLs, timestamps) |
+| `~/Library/Application Support/Agent-Skill-Manager/repos/` | Cloned Git repos for URL-installed skills |
+| `~/Library/Application Support/Agent-Skill-Manager/metadata.json` | Install metadata (source URLs, timestamps) |
 
 ### Concurrency Model
 

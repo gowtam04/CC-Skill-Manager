@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CCSkillManager
+@testable import AgentSkillManager
 
 @Suite("SkillParser Tests")
 struct SkillParserTests {

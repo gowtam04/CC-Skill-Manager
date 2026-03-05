@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct CCSkillManagerApp: App {
+struct AgentSkillManagerApp: App {
     @State private var viewModel: AppViewModel
 
     init() {
@@ -11,9 +11,9 @@ struct CCSkillManagerApp: App {
 
         let appSupportDir: URL
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            appSupportDir = support.appendingPathComponent("CC-Skill-Manager", isDirectory: true)
+            appSupportDir = support.appendingPathComponent("Agent-Skill-Manager", isDirectory: true)
         } else {
-            appSupportDir = homeDir.appendingPathComponent("Library/Application Support/CC-Skill-Manager", isDirectory: true)
+            appSupportDir = homeDir.appendingPathComponent("Library/Application Support/Agent-Skill-Manager", isDirectory: true)
         }
 
         let fileSystemManager = FileSystemManager(

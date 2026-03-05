@@ -1,6 +1,6 @@
-name: CCSkillManager
+name: AgentSkillManager
 options:
-  bundleIdPrefix: com.optiwise
+  bundleIdPrefix: ai.gowtam
   deploymentTarget:
     macOS: "14.0"
   xcodeVersion: "16.0"
@@ -12,33 +12,33 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 targets:
-  CCSkillManager:
+  AgentSkillManager:
     type: application
     platform: macOS
     sources:
       - Sources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.optiwise.cc-skill-manager
-        PRODUCT_NAME: "CC Skill Manager"
-        PRODUCT_MODULE_NAME: CCSkillManager
+        PRODUCT_BUNDLE_IDENTIFIER: ai.gowtam.agent-skill-manager
+        PRODUCT_NAME: "Agent Skill Manager"
+        PRODUCT_MODULE_NAME: AgentSkillManager
         INFOPLIST_GENERATION_MODE: GeneratedByXcode
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_STRICT_CONCURRENCY: complete
     scheme:
       testTargets:
-        - CCSkillManagerTests
+        - AgentSkillManagerTests
 
-  CCSkillManagerTests:
+  AgentSkillManagerTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - Tests
     dependencies:
-      - target: CCSkillManager
+      - target: AgentSkillManager
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.optiwise.cc-skill-manager-tests
+        PRODUCT_BUNDLE_IDENTIFIER: ai.gowtam.agent-skill-manager-tests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CC Skill Manager.app/Contents/MacOS/CC Skill Manager"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Agent Skill Manager.app/Contents/MacOS/Agent Skill Manager"
         BUNDLE_LOADER: "$(TEST_HOST)"

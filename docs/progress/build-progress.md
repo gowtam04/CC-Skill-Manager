@@ -1,4 +1,4 @@
-# CC Skill Manager — Build Progress
+# Agent Skill Manager — Build Progress
 
 ## Status: COMPLETE
 
@@ -67,9 +67,9 @@
 ## Files Created
 
 ### Phase 0 (Scaffolding)
-- project.yml, Sources/App/CCSkillManagerApp.swift, Sources/Views/ContentView.swift
+- project.yml, Sources/App/AgentSkillManagerApp.swift, Sources/Views/ContentView.swift
 - Sources/Models/.gitkeep, Sources/Services/.gitkeep, Sources/ViewModels/.gitkeep
-- Tests/CCSkillManagerTests.swift
+- Tests/AgentSkillManagerTests.swift
 
 ### Phase 1 (Data Layer)
 - Sources/Models/Skill.swift, Sources/Models/SkillMetadata.swift

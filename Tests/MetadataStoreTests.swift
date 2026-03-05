@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CCSkillManager
+@testable import AgentSkillManager
 
 @Suite("MetadataStore Tests")
 struct MetadataStoreTests {
@@ -30,7 +30,7 @@ struct MetadataStoreTests {
           "skills": {
             "my-skill": {
               "sourceRepoURL": "https://github.com/user/repo",
-              "clonedRepoPath": "/Users/test/Library/Application Support/CC-Skill-Manager/repos/repo",
+              "clonedRepoPath": "/Users/test/Library/Application Support/Agent-Skill-Manager/repos/repo",
               "installedAt": "2026-03-02T12:00:00Z"
             }
           }
@@ -44,7 +44,7 @@ struct MetadataStoreTests {
         #expect(metadata.count == 1)
         #expect(metadata["my-skill"] != nil)
         #expect(metadata["my-skill"]?.sourceRepoURL == "https://github.com/user/repo")
-        #expect(metadata["my-skill"]?.clonedRepoPath == "/Users/test/Library/Application Support/CC-Skill-Manager/repos/repo")
+        #expect(metadata["my-skill"]?.clonedRepoPath == "/Users/test/Library/Application Support/Agent-Skill-Manager/repos/repo")
     }
 
     @Test("Returns empty metadata when file does not exist")

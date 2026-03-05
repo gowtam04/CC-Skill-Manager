@@ -1,8 +1,8 @@
 import Testing
-@testable import CCSkillManager
+@testable import AgentSkillManager
 
-@Suite("CCSkillManager Tests")
-struct CCSkillManagerTests {
+@Suite("AgentSkillManager Tests")
+struct AgentSkillManagerTests {
     @Test("App launches successfully")
     func appExists() {
         #expect(true)

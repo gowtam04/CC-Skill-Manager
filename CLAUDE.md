@@ -11,19 +11,19 @@ This project uses XcodeGen to generate the Xcode project from `project.yml`. Alw
 xcodegen generate
 
 # Build
-xcodebuild build -project CCSkillManager.xcodeproj -scheme CCSkillManager -destination 'platform=macOS'
+xcodebuild build -project AgentSkillManager.xcodeproj -scheme AgentSkillManager -destination 'platform=macOS'
 
 # Run all tests (109 tests across 8 suites)
-xcodebuild test -project CCSkillManager.xcodeproj -scheme CCSkillManager -destination 'platform=macOS'
+xcodebuild test -project AgentSkillManager.xcodeproj -scheme AgentSkillManager -destination 'platform=macOS'
 
 # Run a single test suite
-xcodebuild test -project CCSkillManager.xcodeproj -scheme CCSkillManager -destination 'platform=macOS' -only-testing:CCSkillManagerTests/SkillParserTests
+xcodebuild test -project AgentSkillManager.xcodeproj -scheme AgentSkillManager -destination 'platform=macOS' -only-testing:AgentSkillManagerTests/SkillParserTests
 
 # Run a single test
-xcodebuild test -project CCSkillManager.xcodeproj -scheme CCSkillManager -destination 'platform=macOS' -only-testing:CCSkillManagerTests/SkillParserTests/testParseValidFrontmatter
+xcodebuild test -project AgentSkillManager.xcodeproj -scheme AgentSkillManager -destination 'platform=macOS' -only-testing:AgentSkillManagerTests/SkillParserTests/testParseValidFrontmatter
 ```
 
-Note: The test target is `CCSkillManagerTests` but runs under the `CCSkillManager` scheme (no separate test scheme).
+Note: The test target is `AgentSkillManagerTests` but runs under the `AgentSkillManager` scheme (no separate test scheme).
 
 ## Architecture
 
@@ -43,10 +43,10 @@ Views → AppViewModel → SkillManager → { FileSystemManager, GitManager, Ski
 ## Key Conventions
 
 - **Swift 6 strict concurrency** — `SWIFT_STRICT_CONCURRENCY: complete` in project.yml. All models are `Sendable`. `SkillManager` and `AppViewModel` are `@MainActor`.
-- **Swift Testing framework** — Tests use `import Testing` with `@Suite`, `@Test`, `#expect`, `#require` (not XCTest). Use `@testable import CCSkillManager`.
+- **Swift Testing framework** — Tests use `import Testing` with `@Suite`, `@Test`, `#expect`, `#require` (not XCTest). Use `@testable import AgentSkillManager`.
 - **No external dependencies** — YAML parsing is hand-written. Git operations shell out via `Process`. No SPM packages, CocoaPods, or frameworks beyond Foundation and SwiftUI.
 - **macOS 14+ (Sonoma)** — Uses `@Observable` (Observation framework), `NavigationSplitView`, and other macOS 14+ APIs.
-- **Module name** — `PRODUCT_MODULE_NAME: CCSkillManager` (explicit because the product name "CC Skill Manager" has spaces).
+- **Module name** — `PRODUCT_MODULE_NAME: AgentSkillManager` (explicit because the product name "Agent Skill Manager" has spaces).
 
 ## File System Paths
 
@@ -56,8 +56,8 @@ The app manages skills across these directories:
 |------|---------|
 | `~/.claude/skills/` | Active (enabled) skills |
 | `~/.claude/skills-disabled/` | Disabled skills |
-| `~/Library/Application Support/CC-Skill-Manager/repos/` | Cloned Git repos for URL-installed skills |
-| `~/Library/Application Support/CC-Skill-Manager/metadata.json` | Install metadata (source URLs, timestamps) |
+| `~/Library/Application Support/Agent-Skill-Manager/repos/` | Cloned Git repos for URL-installed skills |
+| `~/Library/Application Support/Agent-Skill-Manager/metadata.json` | Install metadata (source URLs, timestamps) |
 
 ## Requirements
 

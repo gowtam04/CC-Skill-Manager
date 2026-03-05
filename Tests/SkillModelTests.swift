@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CCSkillManager
+@testable import AgentSkillManager
 
 @Suite("Skill Model Tests")
 struct SkillModelTests {
@@ -36,7 +36,7 @@ struct SkillModelTests {
     @Test("Initializes a symlinked skill with target path")
     func initSymlinkedSkill() {
         let directoryURL = URL(fileURLWithPath: "/Users/test/.claude/skills/linked-skill")
-        let targetURL = URL(fileURLWithPath: "/Users/test/Library/Application Support/CC-Skill-Manager/repos/repo/skill")
+        let targetURL = URL(fileURLWithPath: "/Users/test/Library/Application Support/Agent-Skill-Manager/repos/repo/skill")
         let skill = Skill(
             id: UUID(),
             name: "linked-skill",

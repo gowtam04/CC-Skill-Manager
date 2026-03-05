@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DetailPanelView: View {
     @Bindable var viewModel: AppViewModel
@@ -21,6 +22,21 @@ struct DetailPanelView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Copy skill name")
+
+                        Button {
+                            exportSkill(skill)
+                        } label: {
+                            if viewModel.isExporting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help("Export as zip")
+                        .disabled(viewModel.isExporting)
                     }
 
                     Divider()
@@ -79,6 +95,19 @@ struct DetailPanelView: View {
                                     .frame(width: 8, height: 8)
                                 Text(skill.isEnabled ? "Enabled" : "Disabled")
                             }
+                        }
+                    }
+
+                    if !skill.fileTree.isEmpty {
+                        Divider()
+
+                        DisclosureGroup("Files (\(totalFileCount(skill.fileTree)))") {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(skill.fileTree) { node in
+                                    FileTreeRowView(node: node, depth: 0)
+                                }
+                            }
+                            .padding(.top, 4)
                         }
                     }
 
@@ -152,6 +181,67 @@ struct DetailPanelView: View {
             ContentUnavailableView("No Skill Selected",
                                    systemImage: "doc.text",
                                    description: Text("Select a skill from the sidebar to view its details."))
+        }
+    }
+
+    private func exportSkill(_ skill: Skill) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(skill.name).zip"
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task {
+                await viewModel.exportSkill(to: url)
+            }
+        }
+    }
+
+    private func totalFileCount(_ nodes: [FileTreeNode]) -> Int {
+        nodes.reduce(0) { count, node in
+            if node.isDirectory {
+                return count + totalFileCount(node.children)
+            } else {
+                return count + 1
+            }
+        }
+    }
+}
+
+struct FileTreeRowView: View {
+    let node: FileTreeNode
+    let depth: Int
+
+    var body: some View {
+        if node.isDirectory {
+            DisclosureGroup {
+                ForEach(node.children) { child in
+                    FileTreeRowView(node: child, depth: depth + 1)
+                }
+            } label: {
+                Label(node.name, systemImage: "folder")
+                    .font(.callout)
+            }
+        } else {
+            Label(node.name, systemImage: fileIcon(for: node.name))
+                .font(.callout)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func fileIcon(for filename: String) -> String {
+        let ext = (filename as NSString).pathExtension.lowercased()
+        switch ext {
+        case "py": return "doc.text"
+        case "sh", "bash", "zsh": return "terminal"
+        case "js", "ts", "swift", "rs", "go", "rb", "java", "c", "cpp", "h":
+            return "chevron.left.forwardslash.chevron.right"
+        case "json", "yaml", "yml", "toml", "xml", "plist":
+            return "gearshape"
+        case "md", "txt", "rst":
+            return "doc.plaintext"
+        default:
+            return "doc"
         }
     }
 }

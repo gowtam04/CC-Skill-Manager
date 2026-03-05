@@ -6,6 +6,7 @@ struct DiscoveredSkill: Sendable {
     let isSymlink: Bool
     let symlinkTarget: URL?
     let skillMDContent: String
+    let fileTree: [FileTreeNode]
 }
 
 struct FileSystemManager: Sendable {
@@ -56,16 +57,72 @@ struct FileSystemManager: Sendable {
             let symlink = isSymlink(at: itemURL)
             let target: URL? = symlink ? (try? resolveSymlink(at: itemURL)) : nil
 
+            let fileTree = enumerateSkillFiles(at: itemURL)
+
             results.append(DiscoveredSkill(
                 directoryURL: itemURL,
                 isEnabled: isEnabled,
                 isSymlink: symlink,
                 symlinkTarget: target,
-                skillMDContent: content
+                skillMDContent: content,
+                fileTree: fileTree
             ))
         }
 
         return results
+    }
+
+    // MARK: - File Tree Enumeration
+
+    func enumerateSkillFiles(at directoryURL: URL) -> [FileTreeNode] {
+        enumerateDirectory(at: directoryURL, relativeTo: directoryURL)
+    }
+
+    private func enumerateDirectory(at url: URL, relativeTo root: URL) -> [FileTreeNode] {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var nodes: [FileTreeNode] = []
+
+        for itemURL in contents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let name = itemURL.lastPathComponent
+
+            // Skip SKILL.md since it's already shown in the editor
+            if name == "SKILL.md" { continue }
+
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: itemURL.path, isDirectory: &isDir)
+
+            let relativePath = itemURL.path.replacingOccurrences(
+                of: root.path + "/",
+                with: ""
+            )
+
+            if isDir.boolValue {
+                let children = enumerateDirectory(at: itemURL, relativeTo: root)
+                nodes.append(FileTreeNode(
+                    id: relativePath,
+                    name: name,
+                    isDirectory: true,
+                    children: children
+                ))
+            } else {
+                nodes.append(FileTreeNode(
+                    id: relativePath,
+                    name: name,
+                    isDirectory: false,
+                    children: []
+                ))
+            }
+        }
+
+        return nodes
     }
 
     // MARK: - Copy
@@ -128,6 +185,35 @@ struct FileSystemManager: Sendable {
         try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
     }
 
+    // MARK: - Export (Zip)
+
+    func zipSkill(at sourceURL: URL, to destinationURL: URL) throws {
+        // Resolve symlinks so the zip contains actual files
+        let resolvedSource: URL
+        if isSymlink(at: sourceURL) {
+            resolvedSource = try resolveSymlink(at: sourceURL)
+        } else {
+            resolvedSource = sourceURL
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = [
+            "-c", "-k", "--sequesterRsrc", "--keepParent",
+            resolvedSource.path, destinationURL.path
+        ]
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
+        try process.run()
+        process.waitUntilExit()
+
+        if process.terminationStatus != 0 {
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw FileSystemManagerError.exportFailed(errorString)
+        }
+    }
+
     // MARK: - Directory Helpers
 
     func ensureDirectoryExists(at url: URL) throws {
@@ -140,11 +226,14 @@ struct FileSystemManager: Sendable {
 
 enum FileSystemManagerError: Error, LocalizedError {
     case nameConflict(String)
+    case exportFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .nameConflict(let name):
             return "A skill named '\(name)' already exists in the target directory."
+        case .exportFailed(let detail):
+            return "Failed to export skill: \(detail)"
         }
     }
 }

@@ -458,4 +458,191 @@ struct FileSystemManagerTests {
         let expectedPath = skillsDir.appendingPathComponent("url-check").standardizedFileURL
         #expect(discovered.directoryURL.standardizedFileURL == expectedPath)
     }
+
+    // MARK: - File Tree Enumeration
+
+    @Test("Enumerate returns empty array for skill with only SKILL.md")
+    func enumerateSkillOnlySkillMD() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "minimal", in: skillsDir)
+
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        let tree = manager.enumerateSkillFiles(at: skillDir)
+
+        #expect(tree.isEmpty)
+    }
+
+    @Test("Enumerate finds files alongside SKILL.md")
+    func enumerateFindsExtraFiles() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "multi-file", in: skillsDir)
+        try "print('hello')".write(
+            to: skillDir.appendingPathComponent("helper.py"),
+            atomically: true, encoding: .utf8
+        )
+        try "{}".write(
+            to: skillDir.appendingPathComponent("config.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        let tree = manager.enumerateSkillFiles(at: skillDir)
+
+        #expect(tree.count == 2)
+        let names = tree.map(\.name).sorted()
+        #expect(names == ["config.json", "helper.py"])
+        #expect(tree.allSatisfy { !$0.isDirectory })
+    }
+
+    @Test("Enumerate builds nested tree for subdirectories")
+    func enumerateBuildsNestedTree() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "nested-skill", in: skillsDir)
+
+        // Create scripts/ subdirectory with files
+        let scriptsDir = skillDir.appendingPathComponent("scripts", isDirectory: true)
+        try FileManager.default.createDirectory(at: scriptsDir, withIntermediateDirectories: true)
+        try "#!/bin/bash".write(
+            to: scriptsDir.appendingPathComponent("run.sh"),
+            atomically: true, encoding: .utf8
+        )
+        try "#!/bin/bash".write(
+            to: scriptsDir.appendingPathComponent("build.sh"),
+            atomically: true, encoding: .utf8
+        )
+
+        // Create a top-level file
+        try "{}".write(
+            to: skillDir.appendingPathComponent("data.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        let tree = manager.enumerateSkillFiles(at: skillDir)
+
+        // Should have data.json and scripts/
+        #expect(tree.count == 2)
+
+        let scriptsNode = tree.first { $0.name == "scripts" }
+        #expect(scriptsNode?.isDirectory == true)
+        #expect(scriptsNode?.children.count == 2)
+
+        let scriptNames = scriptsNode?.children.map(\.name).sorted()
+        #expect(scriptNames == ["build.sh", "run.sh"])
+
+        let dataNode = tree.first { $0.name == "data.json" }
+        #expect(dataNode?.isDirectory == false)
+    }
+
+    @Test("Enumerate excludes hidden files")
+    func enumerateExcludesHiddenFiles() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "hidden-test", in: skillsDir)
+        try "hidden".write(
+            to: skillDir.appendingPathComponent(".hidden"),
+            atomically: true, encoding: .utf8
+        )
+        try "visible".write(
+            to: skillDir.appendingPathComponent("visible.txt"),
+            atomically: true, encoding: .utf8
+        )
+
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        let tree = manager.enumerateSkillFiles(at: skillDir)
+
+        #expect(tree.count == 1)
+        #expect(tree.first?.name == "visible.txt")
+    }
+
+    // MARK: - Zip Export
+
+    @Test("zipSkill creates a valid zip file at the destination")
+    func zipSkillCreatesZip() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "export-me", in: skillsDir)
+
+        let zipURL = tempRoot.appendingPathComponent("export-me.zip")
+
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        try manager.zipSkill(at: skillDir, to: zipURL)
+
+        #expect(FileManager.default.fileExists(atPath: zipURL.path))
+
+        // Verify it's a real zip by checking the file has content
+        let attrs = try FileManager.default.attributesOfItem(atPath: zipURL.path)
+        let size = attrs[.size] as? UInt64 ?? 0
+        #expect(size > 0)
+    }
+
+    @Test("zipSkill includes all skill files in the archive")
+    func zipSkillIncludesAllFiles() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "multi-export", in: skillsDir)
+        try "print('hello')".write(
+            to: skillDir.appendingPathComponent("helper.py"),
+            atomically: true, encoding: .utf8
+        )
+        try "{}".write(
+            to: skillDir.appendingPathComponent("config.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let zipURL = tempRoot.appendingPathComponent("multi-export.zip")
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        try manager.zipSkill(at: skillDir, to: zipURL)
+
+        #expect(FileManager.default.fileExists(atPath: zipURL.path))
+
+        // Unzip and verify contents
+        let unzipDir = tempRoot.appendingPathComponent("unzipped", isDirectory: true)
+        try FileManager.default.createDirectory(at: unzipDir, withIntermediateDirectories: true)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", zipURL.path, unzipDir.path]
+        try process.run()
+        process.waitUntilExit()
+
+        let extractedSkillDir = unzipDir.appendingPathComponent("multi-export")
+        #expect(FileManager.default.fileExists(
+            atPath: extractedSkillDir.appendingPathComponent("SKILL.md").path
+        ))
+        #expect(FileManager.default.fileExists(
+            atPath: extractedSkillDir.appendingPathComponent("helper.py").path
+        ))
+        #expect(FileManager.default.fileExists(
+            atPath: extractedSkillDir.appendingPathComponent("config.json").path
+        ))
+    }
+
+    @Test("Scan populates fileTree in DiscoveredSkill")
+    func scanPopulatesFileTree() throws {
+        let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let skillDir = try createSkillDirectory(named: "tree-scan", in: skillsDir)
+        try "content".write(
+            to: skillDir.appendingPathComponent("extra.txt"),
+            atomically: true, encoding: .utf8
+        )
+
+        let manager = makeManager(skillsDir: skillsDir, disabledDir: disabledDir)
+        let results = try manager.scanSkills()
+
+        let discovered = try #require(results.first)
+        #expect(discovered.fileTree.count == 1)
+        #expect(discovered.fileTree.first?.name == "extra.txt")
+    }
 }

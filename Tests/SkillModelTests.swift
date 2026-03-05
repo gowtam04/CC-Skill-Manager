@@ -19,7 +19,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: "---\nname: my-skill\ndescription: A test skill\n---\nBody"
+            rawContent: "---\nname: my-skill\ndescription: A test skill\n---\nBody",
+            fileTree: []
         )
 
         #expect(skill.name == "my-skill")
@@ -45,7 +46,8 @@ struct SkillModelTests {
             symlinkTarget: targetURL,
             isEnabled: true,
             sourceRepoURL: "https://github.com/user/repo",
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill.isSymlink == true)
@@ -65,7 +67,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
         let skill2 = Skill(
             id: UUID(),
@@ -76,7 +79,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill1.id != skill2.id)
@@ -96,7 +100,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill.isEnabled == true)
@@ -114,7 +119,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: false,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill.isEnabled == false)
@@ -135,7 +141,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         // A skill in skills-disabled/ should be disabled
@@ -148,7 +155,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: false,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(enabledSkill.isEnabled == true)
@@ -168,7 +176,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill.sourceRepoURL == nil)
@@ -185,7 +194,8 @@ struct SkillModelTests {
             symlinkTarget: URL(fileURLWithPath: "/path/to/repo/skill"),
             isEnabled: true,
             sourceRepoURL: "https://github.com/user/repo",
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill.sourceRepoURL == "https://github.com/user/repo")
@@ -202,7 +212,8 @@ struct SkillModelTests {
             symlinkTarget: nil,
             isEnabled: true,
             sourceRepoURL: nil,
-            rawContent: ""
+            rawContent: "",
+            fileTree: []
         )
 
         #expect(skill.symlinkTarget == nil)

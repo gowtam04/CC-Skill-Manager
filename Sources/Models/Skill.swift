@@ -10,4 +10,5 @@ struct Skill: Identifiable, Sendable {
     let isEnabled: Bool
     let sourceRepoURL: String?
     let rawContent: String
+    let fileTree: [FileTreeNode]
 }

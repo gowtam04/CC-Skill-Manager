@@ -33,6 +33,9 @@ final class AppViewModel {
     // Pull state
     var isPulling: Bool = false
 
+    // Export state
+    var isExporting: Bool = false
+
     // MARK: - Private
 
     private let skillManager: SkillManager
@@ -175,6 +178,19 @@ final class AppViewModel {
         do {
             _ = try await skillManager.pullLatest(for: skill)
             await loadSkills()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Export
+
+    func exportSkill(to url: URL) async {
+        guard let skill = selectedSkill else { return }
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            try skillManager.exportSkill(skill, to: url)
         } catch {
             errorMessage = error.localizedDescription
         }

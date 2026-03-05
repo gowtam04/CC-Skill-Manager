@@ -70,7 +70,8 @@ final class SkillManager {
                 symlinkTarget: item.symlinkTarget,
                 isEnabled: item.isEnabled,
                 sourceRepoURL: sourceRepoURL,
-                rawContent: rawContent
+                rawContent: rawContent,
+                fileTree: item.fileTree
             )
             loadedSkills.append(skill)
         }
@@ -218,6 +219,18 @@ final class SkillManager {
 
         let repoURL = URL(fileURLWithPath: meta.clonedRepoPath)
         return try await gitManager.pull(in: repoURL)
+    }
+
+    // MARK: - Export
+
+    func exportSkill(_ skill: Skill, to destinationURL: URL) throws {
+        let sourceURL: URL
+        if skill.isSymlink, let target = skill.symlinkTarget {
+            sourceURL = target
+        } else {
+            sourceURL = skill.directoryURL
+        }
+        try fileSystemManager.zipSkill(at: sourceURL, to: destinationURL)
     }
 
     // MARK: - Read / Save Content

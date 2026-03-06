@@ -114,6 +114,24 @@ final class AppViewModel {
         }
     }
 
+    func addSkillsFromFiles(urls: [URL]) async {
+        var errors: [String] = []
+        for url in urls {
+            do {
+                try await skillManager.addSkillFromFile(sourceURL: url)
+            } catch {
+                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        skills = skillManager.skills
+        applyFilter()
+        if errors.isEmpty {
+            isShowingAddSheet = false
+        } else {
+            errorMessage = errors.joined(separator: "\n")
+        }
+    }
+
     // MARK: - Add Skill from URL (FR-5)
 
     func addSkillFromURL() async {

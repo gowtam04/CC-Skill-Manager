@@ -73,12 +73,12 @@ struct AddSkillView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Select a skill directory containing SKILL.md"
+        panel.allowsMultipleSelection = true
+        panel.message = "Select one or more skill directories containing SKILL.md"
 
-        if panel.runModal() == .OK, let url = panel.url {
+        if panel.runModal() == .OK, !panel.urls.isEmpty {
             Task {
-                await viewModel.addSkillFromFile(url: url)
+                await viewModel.addSkillsFromFiles(urls: panel.urls)
                 if viewModel.errorMessage == nil {
                     dismiss()
                 }

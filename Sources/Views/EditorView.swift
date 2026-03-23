@@ -12,6 +12,12 @@ struct EditorView: View {
                         .font(.headline)
                 }
                 Spacer()
+                Picker("Mode", selection: $viewModel.editorMode) {
+                    Text("Edit").tag(EditorMode.edit)
+                    Text("Preview").tag(EditorMode.preview)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 140)
                 Button("Cancel") {
                     viewModel.cancelEditing()
                 }
@@ -27,10 +33,19 @@ struct EditorView: View {
             Divider()
 
             // Editor
-            TextEditor(text: $viewModel.editorContent)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .padding(4)
+            if viewModel.editorMode == .edit {
+                TextEditor(text: $viewModel.editorContent)
+                    .font(.system(.body, design: .monospaced))
+                    .scrollContentBackground(.visible)
+                    .padding(4)
+            } else {
+                MarkdownWebView(
+                    html: MarkdownRenderer.renderHTML(
+                        markdown: viewModel.editorContent,
+                        includeFrontmatter: true
+                    )
+                )
+            }
         }
         .alert("File Modified Externally", isPresented: $viewModel.isShowingExternalModificationWarning) {
             Button("Overwrite", role: .destructive) {

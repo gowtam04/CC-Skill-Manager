@@ -6,9 +6,9 @@ struct DetailPanelView: View {
 
     var body: some View {
         if let skill = viewModel.selectedSkill {
-            ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Header — always visible above tabs
                 VStack(alignment: .leading, spacing: 16) {
-                    // Name
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(skill.name)
                             .font(.largeTitle)
@@ -39,8 +39,20 @@ struct DetailPanelView: View {
                         .disabled(viewModel.isExporting)
                     }
 
-                    Divider()
+                    Picker("Tab", selection: $viewModel.detailPanelTab) {
+                        Text("Info").tag(DetailTab.info)
+                        Text("Content").tag(DetailTab.content)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
 
+                    Divider()
+                }
+                .padding([.horizontal, .top])
+
+                if viewModel.detailPanelTab == .info {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
                     // Metadata grid
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                         GridRow {
@@ -152,8 +164,17 @@ struct DetailPanelView: View {
                     }
 
                     Spacer()
+                    }
+                    .padding(.horizontal)
                 }
-                .padding()
+                } else {
+                    MarkdownWebView(
+                        html: MarkdownRenderer.renderHTML(
+                            markdown: skill.rawContent,
+                            includeFrontmatter: false
+                        )
+                    )
+                }
             }
             .alert("Delete Skill", isPresented: $viewModel.isShowingDeleteConfirmation) {
                 if skill.isSymlink {

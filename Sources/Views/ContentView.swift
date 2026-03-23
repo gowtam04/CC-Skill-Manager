@@ -13,6 +13,17 @@ struct ContentView: View {
                 DetailPanelView(viewModel: viewModel)
             }
         }
+        .overlay {
+            if viewModel.isDropTargeted {
+                DropOverlayView()
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            Task { await viewModel.handleDroppedURLs(urls) }
+            return true
+        } isTargeted: { targeted in
+            viewModel.isDropTargeted = targeted
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

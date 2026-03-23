@@ -1,6 +1,14 @@
 import Foundation
 import Observation
 
+enum EditorMode: Sendable {
+    case edit, preview
+}
+
+enum DetailTab: String, Sendable {
+    case info, content
+}
+
 @MainActor
 @Observable
 final class AppViewModel {
@@ -23,6 +31,14 @@ final class AppViewModel {
     var isShowingUnsavedChangesAlert: Bool = false
     var pendingSkillSelection: Skill?
 
+    // Editor mode & detail tab
+    var editorMode: EditorMode = .edit
+    var detailPanelTab: DetailTab = .info {
+        didSet {
+            UserDefaults.standard.set(detailPanelTab.rawValue, forKey: "detailPanelTab")
+        }
+    }
+
     // Add skill state
     var isShowingAddSheet: Bool = false
     var addSkillURL: String = ""
@@ -32,6 +48,9 @@ final class AppViewModel {
     var duplicateSkillNames: [String] = []
     private var pendingFileImportURLs: [URL] = []
     private var pendingStagedURLInstall: StagedURLInstall?
+
+    // Drop import state
+    var isDropTargeted: Bool = false
 
     // Delete state
     var isShowingDeleteConfirmation: Bool = false
@@ -50,6 +69,8 @@ final class AppViewModel {
 
     init(skillManager: SkillManager) {
         self.skillManager = skillManager
+        let savedTab = UserDefaults.standard.string(forKey: "detailPanelTab")
+        self.detailPanelTab = DetailTab(rawValue: savedTab ?? "") ?? .info
     }
 
     // MARK: - Load Skills
@@ -196,6 +217,18 @@ final class AppViewModel {
         duplicateSkillNames = []
     }
 
+    // MARK: - Drop Import
+
+    func handleDroppedURLs(_ urls: [URL]) async {
+        isShowingAddSheet = false
+        let directoryURLs = urls.filter { url in
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+        }
+        guard !directoryURLs.isEmpty else { return }
+        await addSkillsFromFiles(urls: directoryURLs)
+    }
+
     // MARK: - Enable / Disable (FR-7)
 
     func enableSkill() async {
@@ -267,6 +300,7 @@ final class AppViewModel {
     // MARK: - Editor (FR-6)
 
     func startEditing() {
+        editorMode = .edit
         guard let skill = selectedSkill else { return }
         do {
             let content = try skillManager.readSkillContent(skill)
@@ -293,6 +327,7 @@ final class AppViewModel {
                 return
             }
             try skillManager.saveSkillContent(skill, content: editorContent)
+            editorMode = .edit
             isEditing = false
             editorFileModificationDate = nil
             await loadSkills()
@@ -305,6 +340,7 @@ final class AppViewModel {
         guard let skill = selectedSkill else { return }
         do {
             try skillManager.saveSkillContent(skill, content: editorContent)
+            editorMode = .edit
             isEditing = false
             editorFileModificationDate = nil
             isShowingExternalModificationWarning = false
@@ -315,6 +351,7 @@ final class AppViewModel {
     }
 
     func cancelEditing() {
+        editorMode = .edit
         isEditing = false
         editorContent = ""
         editorOriginalContent = ""

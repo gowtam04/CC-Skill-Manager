@@ -892,4 +892,277 @@ struct AppViewModelTests {
         // skills array should remain unchanged
         #expect(vm.skills.count == 3)
     }
+
+    // MARK: - Drop Import
+
+    @Test("handleDroppedURLs imports directories containing SKILL.md")
+    func handleDroppedURLsImportsDirectories() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let externalDir = tempRoot.appendingPathComponent("external", isDirectory: true)
+        let sourceSkill = try createSkillDirectory(named: "dropped-skill", in: externalDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        #expect(vm.skills.isEmpty)
+
+        await vm.handleDroppedURLs([sourceSkill])
+
+        #expect(vm.skills.count == 1)
+        #expect(vm.skills.first?.name == "dropped-skill")
+    }
+
+    @Test("handleDroppedURLs filters out file URLs, nothing imported")
+    func handleDroppedURLsFiltersOutFiles() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Create a plain file (not a directory)
+        let fileURL = tempRoot.appendingPathComponent("not-a-directory.md")
+        try "some content".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        await vm.handleDroppedURLs([fileURL])
+
+        #expect(vm.skills.isEmpty)
+    }
+
+    @Test("handleDroppedURLs with mixed URLs imports directories, ignores files")
+    func handleDroppedURLsMixedURLs() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Create a valid skill directory
+        let externalDir = tempRoot.appendingPathComponent("external", isDirectory: true)
+        let sourceSkill = try createSkillDirectory(named: "valid-drop", in: externalDir)
+
+        // Create a plain file
+        let fileURL = tempRoot.appendingPathComponent("stray-file.txt")
+        try "stray content".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        await vm.handleDroppedURLs([sourceSkill, fileURL])
+
+        // Only the directory should have been imported
+        #expect(vm.skills.count == 1)
+        #expect(vm.skills.first?.name == "valid-drop")
+    }
+
+    @Test("handleDroppedURLs with empty array is a no-op")
+    func handleDroppedURLsEmptyArray() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        await vm.handleDroppedURLs([])
+
+        #expect(vm.skills.isEmpty)
+        #expect(vm.errorMessage == nil)
+    }
+
+    @Test("isDropTargeted starts as false")
+    func isDropTargetedStartsFalse() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+
+        #expect(!vm.isDropTargeted)
+    }
+
+    @Test("Drop dismisses Add Skill sheet")
+    func dropDismissesAddSheet() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let externalDir = tempRoot.appendingPathComponent("external", isDirectory: true)
+        let sourceSkill = try createSkillDirectory(named: "sheet-dismiss", in: externalDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        vm.isShowingAddSheet = true
+
+        await vm.handleDroppedURLs([sourceSkill])
+
+        #expect(!vm.isShowingAddSheet)
+    }
+
+    // MARK: - Editor Preview Mode
+
+    @Test("editorMode starts as .edit when editing begins")
+    func editorModeStartsAsEditWhenEditing() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "preview-test", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "preview-test" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+
+        #expect(vm.editorMode == .edit)
+    }
+
+    @Test("editorMode resets to .edit on cancel")
+    func editorModeResetsToEditOnCancel() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "cancel-mode", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "cancel-mode" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+        vm.editorMode = .preview
+        #expect(vm.editorMode == .preview)
+
+        vm.cancelEditing()
+
+        #expect(vm.editorMode == .edit)
+    }
+
+    @Test("editorMode resets to .edit on save")
+    func editorModeResetsToEditOnSave() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "save-mode", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "save-mode" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+        vm.editorMode = .preview
+        #expect(vm.editorMode == .preview)
+
+        await vm.saveEditing()
+
+        #expect(vm.editorMode == .edit)
+    }
+
+    @Test("Save works regardless of editor mode")
+    func saveWorksRegardlessOfEditorMode() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "save-in-preview", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skill = try #require(vm.skills.first { $0.name == "save-in-preview" })
+        vm.selectSkill(skill)
+        vm.startEditing()
+
+        let updatedContent = """
+        ---
+        name: save-in-preview
+        description: Updated while in preview mode
+        ---
+        # Preview Save Test
+        Content saved from preview mode.
+        """
+        vm.editorContent = updatedContent
+        vm.editorMode = .preview
+
+        await vm.saveEditing()
+
+        #expect(!vm.isEditing)
+
+        // Verify the file was actually written to disk
+        let fileContent = try String(
+            contentsOf: skillsDir
+                .appendingPathComponent("save-in-preview")
+                .appendingPathComponent("SKILL.md"),
+            encoding: .utf8
+        )
+        #expect(fileContent.contains("Content saved from preview mode."))
+    }
+
+    // MARK: - Detail Panel Tabs
+
+    @Test("detailPanelTab defaults to .info")
+    func detailPanelTabDefaultsToInfo() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Ensure no stale UserDefaults value
+        UserDefaults.standard.removeObject(forKey: "detailPanelTab")
+        defer { UserDefaults.standard.removeObject(forKey: "detailPanelTab") }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+
+        #expect(vm.detailPanelTab == .info)
+    }
+
+    @Test("detailPanelTab initializes from UserDefaults")
+    func detailPanelTabInitializesFromUserDefaults() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Set UserDefaults before creating the ViewModel
+        UserDefaults.standard.set("content", forKey: "detailPanelTab")
+        defer { UserDefaults.standard.removeObject(forKey: "detailPanelTab") }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+
+        #expect(vm.detailPanelTab == .content)
+    }
+
+    @Test("Changing detailPanelTab persists to UserDefaults")
+    func detailPanelTabPersistsToUserDefaults() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer {
+            cleanUp(tempRoot)
+            UserDefaults.standard.removeObject(forKey: "detailPanelTab")
+        }
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        vm.detailPanelTab = .content
+
+        let stored = UserDefaults.standard.string(forKey: "detailPanelTab")
+        #expect(stored == "content")
+    }
+
+    @Test("Tab selection preserved when switching skills")
+    func tabSelectionPreservedWhenSwitchingSkills() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        // Clean UserDefaults state
+        UserDefaults.standard.removeObject(forKey: "detailPanelTab")
+        defer { UserDefaults.standard.removeObject(forKey: "detailPanelTab") }
+
+        try createSkillDirectory(named: "tab-skill-a", in: skillsDir)
+        try createSkillDirectory(named: "tab-skill-b", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let skillA = try #require(vm.skills.first { $0.name == "tab-skill-a" })
+        let skillB = try #require(vm.skills.first { $0.name == "tab-skill-b" })
+
+        vm.selectSkill(skillA)
+        vm.detailPanelTab = .content
+        #expect(vm.detailPanelTab == .content)
+
+        vm.selectSkill(skillB)
+
+        #expect(vm.detailPanelTab == .content)
+    }
 }

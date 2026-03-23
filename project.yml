@@ -6,6 +6,11 @@ options:
   xcodeVersion: "16.0"
   minimumXcodeGenVersion: "2.38"
 
+packages:
+  swift-cmark:
+    url: https://github.com/apple/swift-cmark
+    branch: gfm
+
 settings:
   base:
     SWIFT_VERSION: "6"
@@ -17,6 +22,14 @@ targets:
     platform: macOS
     sources:
       - Sources
+    dependencies:
+      - package: swift-cmark
+        product: cmark-gfm
+      - package: swift-cmark
+        product: cmark-gfm-extensions
+    resources:
+      - path: Sources/Resources
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.gowtam.agent-skill-manager

@@ -5,8 +5,62 @@ struct DetailPanelView: View {
     @Bindable var viewModel: AppViewModel
 
     var body: some View {
-        if let skill = viewModel.selectedSkill {
-            VStack(alignment: .leading, spacing: 0) {
+        Group {
+            if viewModel.selectedSkillIDs.count >= 2 {
+                MultiSelectionSummaryView(viewModel: viewModel)
+            } else if let skill = viewModel.selectedSkill {
+                singleSkillBody(skill: skill)
+            } else {
+                ContentUnavailableView("No Skill Selected",
+                                       systemImage: "doc.text",
+                                       description: Text("Select a \(viewModel.providerDisplayName) skill from the sidebar to view its details."))
+            }
+        }
+        .alert(deleteAlertTitle, isPresented: $viewModel.isShowingDeleteConfirmation) {
+            if viewModel.selectionContainsSymlinks {
+                Button("Remove link only", role: .destructive) {
+                    Task { await viewModel.deleteCurrentSelection(removeSource: false) }
+                }
+                Button("Remove link and source", role: .destructive) {
+                    Task { await viewModel.deleteCurrentSelection(removeSource: true) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } else {
+                Button("Delete", role: .destructive) {
+                    Task { await viewModel.deleteCurrentSelection(removeSource: false) }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: {
+            Text(deleteAlertMessage)
+        }
+    }
+
+    private var deleteAlertTitle: String {
+        let count = viewModel.selectedSkillIDs.count
+        return count > 1 ? "Delete \(count) Skills" : "Delete Skill"
+    }
+
+    private var deleteAlertMessage: String {
+        let count = viewModel.selectedSkillIDs.count
+        if count > 1 {
+            if viewModel.selectionContainsSymlinks {
+                return "Some of these \(count) skills are symlinks. Choose how to remove them."
+            }
+            return "Delete these \(count) skills? This will permanently remove them and their files."
+        }
+        guard let skill = viewModel.selectedSkill else {
+            return ""
+        }
+        if skill.isSymlink {
+            return "This skill is a symlink. Choose how to remove it."
+        }
+        return "Delete \(skill.name)? This will permanently remove the skill and its files."
+    }
+
+    @ViewBuilder
+    private func singleSkillBody(skill: Skill) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
                 // Header — always visible above tabs
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -182,33 +236,6 @@ struct DetailPanelView: View {
                         )
                     )
                 }
-            }
-            .alert("Delete Skill", isPresented: $viewModel.isShowingDeleteConfirmation) {
-                if skill.isSymlink {
-                    Button("Remove link only", role: .destructive) {
-                        Task { await viewModel.deleteSkill(removeSource: false) }
-                    }
-                    Button("Remove link and source", role: .destructive) {
-                        Task { await viewModel.deleteSkill(removeSource: true) }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } else {
-                    Button("Delete", role: .destructive) {
-                        Task { await viewModel.deleteSkill(removeSource: false) }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                }
-            } message: {
-                if skill.isSymlink {
-                    Text("This skill is a symlink. Choose how to remove it.")
-                } else {
-                    Text("Delete \(skill.name)? This will permanently remove the skill and its files.")
-                }
-            }
-        } else {
-            ContentUnavailableView("No Skill Selected",
-                                   systemImage: "doc.text",
-                                   description: Text("Select a \(viewModel.providerDisplayName) skill from the sidebar to view its details."))
         }
     }
 
@@ -233,6 +260,66 @@ struct DetailPanelView: View {
                 return count + 1
             }
         }
+    }
+}
+
+struct MultiSelectionSummaryView: View {
+    @Bindable var viewModel: AppViewModel
+
+    var body: some View {
+        let selected = viewModel.selectedSkills
+        let enabledCount = selected.filter(\.isEnabled).count
+        let disabledCount = selected.count - enabledCount
+        let anyEnabled = enabledCount > 0
+        let anyDisabled = disabledCount > 0
+
+        VStack(alignment: .leading, spacing: 16) {
+            Text("\(selected.count) skills selected")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+
+            Text("\(enabledCount) enabled, \(disabledCount) disabled")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(selected) { skill in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(skill.isEnabled ? Color.green : Color.red)
+                                .frame(width: 6, height: 6)
+                            Text(skill.name)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                if anyEnabled {
+                    Button("Disable All") {
+                        Task { await viewModel.disableSelectedSkills() }
+                    }
+                }
+                if anyDisabled {
+                    Button("Enable All") {
+                        Task { await viewModel.enableSelectedSkills() }
+                    }
+                }
+                Button("Delete All", role: .destructive) {
+                    viewModel.isShowingDeleteConfirmation = true
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

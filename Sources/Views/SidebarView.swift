@@ -9,14 +9,9 @@ struct SidebarView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
 
-            List(viewModel.filteredSkills, selection: Binding<Skill.ID?>(
-                get: { viewModel.selectedSkill?.id },
-                set: { newID in
-                    if let id = newID,
-                       let skill = viewModel.filteredSkills.first(where: { $0.id == id }) {
-                        viewModel.selectSkill(skill)
-                    }
-                }
+            List(viewModel.filteredSkills, selection: Binding<Set<Skill.ID>>(
+                get: { viewModel.selectedSkillIDs },
+                set: { viewModel.setSelection(ids: $0) }
             )) { skill in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(skill.name)

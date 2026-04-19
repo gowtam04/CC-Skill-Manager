@@ -909,6 +909,139 @@ struct AppViewModelTests {
         #expect(vm.editorContent == "my unsaved work")
     }
 
+    // MARK: - Multi-Selection Bulk Actions
+
+    @Test("Bulk disable only moves enabled skills, leaves disabled ones untouched")
+    func bulkDisableSkipsAlreadyDisabled() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "alpha", in: skillsDir)
+        try createSkillDirectory(named: "beta", in: skillsDir)
+        try createSkillDirectory(named: "already-off", in: disabledDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let ids = Set(vm.skills.map { $0.id })
+        vm.setSelection(ids: ids)
+        #expect(vm.selectedSkillIDs.count == 3)
+
+        await vm.disableSelectedSkills()
+
+        #expect(FileManager.default.fileExists(atPath: disabledDir.appendingPathComponent("alpha").path))
+        #expect(FileManager.default.fileExists(atPath: disabledDir.appendingPathComponent("beta").path))
+        #expect(FileManager.default.fileExists(atPath: disabledDir.appendingPathComponent("already-off").path))
+        #expect(!FileManager.default.fileExists(atPath: skillsDir.appendingPathComponent("alpha").path))
+        #expect(!FileManager.default.fileExists(atPath: skillsDir.appendingPathComponent("beta").path))
+
+        for skill in vm.skills {
+            #expect(skill.isEnabled == false)
+        }
+    }
+
+    @Test("Bulk enable only moves disabled skills, leaves enabled ones untouched")
+    func bulkEnableSkipsAlreadyEnabled() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "already-on", in: skillsDir)
+        try createSkillDirectory(named: "off-one", in: disabledDir)
+        try createSkillDirectory(named: "off-two", in: disabledDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        vm.setSelection(ids: Set(vm.skills.map { $0.id }))
+
+        await vm.enableSelectedSkills()
+
+        #expect(FileManager.default.fileExists(atPath: skillsDir.appendingPathComponent("already-on").path))
+        #expect(FileManager.default.fileExists(atPath: skillsDir.appendingPathComponent("off-one").path))
+        #expect(FileManager.default.fileExists(atPath: skillsDir.appendingPathComponent("off-two").path))
+        #expect(!FileManager.default.fileExists(atPath: disabledDir.appendingPathComponent("off-one").path))
+        #expect(!FileManager.default.fileExists(atPath: disabledDir.appendingPathComponent("off-two").path))
+
+        for skill in vm.skills {
+            #expect(skill.isEnabled == true)
+        }
+    }
+
+    @Test("Bulk delete removes all selected skills and clears selection")
+    func bulkDeleteRemovesAll() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "one", in: skillsDir)
+        try createSkillDirectory(named: "two", in: skillsDir)
+        try createSkillDirectory(named: "three", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+        #expect(vm.skills.count == 3)
+
+        vm.setSelection(ids: Set(vm.skills.map { $0.id }))
+        await vm.deleteSelectedSkills(removeSource: false)
+
+        #expect(vm.skills.isEmpty)
+        #expect(vm.selectedSkillIDs.isEmpty)
+        #expect(!vm.isShowingDeleteConfirmation)
+    }
+
+    @Test("Bulk delete aggregates errors from failing targets and still removes the rest")
+    func bulkDeleteAggregatesErrors() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        try createSkillDirectory(named: "survivor", in: skillsDir)
+        try createSkillDirectory(named: "doomed", in: skillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let doomed = try #require(vm.skills.first { $0.name == "doomed" })
+        try FileManager.default.removeItem(at: doomed.directoryURL)
+
+        vm.setSelection(ids: Set(vm.skills.map { $0.id }))
+        await vm.deleteSelectedSkills(removeSource: false)
+
+        #expect(vm.errorMessage != nil)
+        #expect(vm.errorMessage?.contains("doomed") == true)
+        #expect(vm.skills.isEmpty)
+    }
+
+    @Test("Multi-selection persists across provider switches")
+    func multiSelectionPersistsAcrossProviderSwitch() async throws {
+        let (tempRoot, skillsDir, disabledDir, appSupportDir) = try makeTempEnvironment()
+        defer { cleanUp(tempRoot) }
+
+        let codexSkillsDir = tempRoot.appendingPathComponent("codex-skills", isDirectory: true)
+        try FileManager.default.createDirectory(at: codexSkillsDir, withIntermediateDirectories: true)
+
+        try createSkillDirectory(named: "claude-one", in: skillsDir)
+        try createSkillDirectory(named: "claude-two", in: skillsDir)
+        try createSkillDirectory(named: "claude-three", in: skillsDir)
+        try createSkillDirectory(named: "codex-one", in: codexSkillsDir)
+
+        let vm = makeViewModel(skillsDir: skillsDir, disabledDir: disabledDir, appSupportDir: appSupportDir)
+        await vm.loadSkills()
+
+        let claudeTargets = vm.skills.filter { $0.name != "claude-two" }
+        let claudePaths = Set(claudeTargets.map { $0.directoryURL.path })
+        vm.setSelection(ids: Set(claudeTargets.map { $0.id }))
+        #expect(vm.selectedSkillIDs.count == 2)
+
+        vm.requestProviderSelection(.codex)
+        #expect(vm.selectedProvider == .codex)
+        #expect(vm.selectedSkillIDs.isEmpty)
+
+        vm.requestProviderSelection(.claudeCode)
+        #expect(vm.selectedProvider == .claudeCode)
+        #expect(vm.selectedSkillIDs.count == 2)
+        let restoredPaths = Set(vm.selectedSkills.map { $0.directoryURL.path })
+        #expect(restoredPaths == claudePaths)
+    }
+
     // MARK: - Search updates filteredSkills but not skills
 
     @Test("Search filters filteredSkills without modifying skills array")

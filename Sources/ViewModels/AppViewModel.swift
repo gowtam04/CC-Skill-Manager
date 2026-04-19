@@ -25,10 +25,27 @@ final class AppViewModel {
     }
     var skills: [Skill] = []
     var filteredSkills: [Skill] = []
-    var selectedSkill: Skill? {
+    var selectedSkillIDs: Set<Skill.ID> = [] {
         didSet {
-            selectedSkillPathByProvider[selectedProvider] = selectedSkill?.directoryURL.path
+            let paths = Set(
+                skills
+                    .filter { selectedSkillIDs.contains($0.id) }
+                    .map { $0.directoryURL.path }
+            )
+            selectedSkillPathsByProvider[selectedProvider] = paths
         }
+    }
+    var selectedSkill: Skill? {
+        guard selectedSkillIDs.count == 1, let id = selectedSkillIDs.first else {
+            return nil
+        }
+        return skills.first { $0.id == id }
+    }
+    var selectedSkills: [Skill] {
+        skills.filter { selectedSkillIDs.contains($0.id) }
+    }
+    var selectionContainsSymlinks: Bool {
+        selectedSkills.contains(where: { $0.isSymlink })
     }
     var searchText: String = "" {
         didSet {
@@ -46,6 +63,7 @@ final class AppViewModel {
     var isShowingExternalModificationWarning: Bool = false
     var isShowingUnsavedChangesAlert: Bool = false
     var pendingSkillSelection: Skill?
+    var pendingSelectionPaths: Set<String>?
     var pendingProviderSelection: SkillProvider?
 
     // Editor mode & detail tab
@@ -83,7 +101,7 @@ final class AppViewModel {
     private let claudeSkillManager: SkillManager
     private let codexSkillManager: SkillManager
     private var skillsByProvider: [SkillProvider: [Skill]] = [:]
-    private var selectedSkillPathByProvider: [SkillProvider: String] = [:]
+    private var selectedSkillPathsByProvider: [SkillProvider: Set<String>] = [:]
     private var searchTextByProvider: [SkillProvider: String] = [:]
 
     // MARK: - Init
@@ -99,6 +117,7 @@ final class AppViewModel {
         self.detailPanelTab = DetailTab(rawValue: savedTab ?? "") ?? .info
 
         self.skillsByProvider = Dictionary(uniqueKeysWithValues: SkillProvider.allCases.map { ($0, []) })
+        self.selectedSkillPathsByProvider = Dictionary(uniqueKeysWithValues: SkillProvider.allCases.map { ($0, Set<String>()) })
         self.searchTextByProvider = Dictionary(uniqueKeysWithValues: SkillProvider.allCases.map { ($0, "") })
         restoreState(for: selectedProvider)
     }
@@ -120,7 +139,7 @@ final class AppViewModel {
             try await refreshProvider(provider)
         } catch {
             skillsByProvider[provider] = []
-            selectedSkillPathByProvider[provider] = nil
+            selectedSkillPathsByProvider[provider] = []
 
             if provider == selectedProvider {
                 restoreState(for: provider)
@@ -132,17 +151,38 @@ final class AppViewModel {
     // MARK: - Selection
 
     func selectSkill(_ skill: Skill) {
-        if isEditing {
-            if editorContent != editorOriginalContent {
-                pendingSkillSelection = skill
-                pendingProviderSelection = nil
-                isShowingUnsavedChangesAlert = true
+        setSelection(ids: [skill.id])
+    }
+
+    func setSelection(ids: Set<Skill.ID>) {
+        let matchedSkill = ids.count == 1
+            ? ids.first.flatMap { id in skills.first { $0.id == id } }
+            : nil
+        let isDirty = isEditing && editorContent != editorOriginalContent
+
+        if isDirty {
+            pendingProviderSelection = nil
+            if let matchedSkill {
+                pendingSkillSelection = matchedSkill
+                pendingSelectionPaths = nil
             } else {
-                selectedSkill = skill
-                startEditing()
+                pendingSkillSelection = nil
+                pendingSelectionPaths = Set(
+                    skills.filter { ids.contains($0.id) }.map { $0.directoryURL.path }
+                )
             }
+            isShowingUnsavedChangesAlert = true
+            return
+        }
+
+        if isEditing, let matchedSkill {
+            selectedSkillIDs = [matchedSkill.id]
+            startEditing()
+        } else if isEditing {
+            cancelEditing()
+            selectedSkillIDs = ids
         } else {
-            selectedSkill = skill
+            selectedSkillIDs = ids
         }
     }
 
@@ -153,6 +193,7 @@ final class AppViewModel {
             if editorContent != editorOriginalContent {
                 pendingProviderSelection = provider
                 pendingSkillSelection = nil
+                pendingSelectionPaths = nil
                 isShowingUnsavedChangesAlert = true
             } else {
                 cancelEditing()
@@ -294,7 +335,11 @@ final class AppViewModel {
         do {
             try await activeSkillManager.enableSkill(skill)
             try await refreshProvider(selectedProvider)
-            selectedSkill = skills.first { $0.directoryURL.lastPathComponent == directoryName }
+            if let refreshed = skills.first(where: { $0.directoryURL.lastPathComponent == directoryName }) {
+                selectedSkillIDs = [refreshed.id]
+            } else {
+                selectedSkillIDs = []
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -306,9 +351,67 @@ final class AppViewModel {
         do {
             try await activeSkillManager.disableSkill(skill)
             try await refreshProvider(selectedProvider)
-            selectedSkill = skills.first { $0.directoryURL.lastPathComponent == directoryName }
+            if let refreshed = skills.first(where: { $0.directoryURL.lastPathComponent == directoryName }) {
+                selectedSkillIDs = [refreshed.id]
+            } else {
+                selectedSkillIDs = []
+            }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func enableSelectedSkills() async {
+        let targets = selectedSkills.filter { !$0.isEnabled }
+        guard !targets.isEmpty else { return }
+        let trackedDirectoryNames = Set(selectedSkills.map { $0.directoryURL.lastPathComponent })
+        var errors: [String] = []
+        for skill in targets {
+            do {
+                try await activeSkillManager.enableSkill(skill)
+            } catch {
+                errors.append("\(skill.name): \(error.localizedDescription)")
+            }
+        }
+        do {
+            try await refreshProvider(selectedProvider)
+        } catch {
+            errors.append(error.localizedDescription)
+        }
+        selectedSkillIDs = Set(
+            skills
+                .filter { trackedDirectoryNames.contains($0.directoryURL.lastPathComponent) }
+                .map { $0.id }
+        )
+        if !errors.isEmpty {
+            errorMessage = errors.joined(separator: "\n")
+        }
+    }
+
+    func disableSelectedSkills() async {
+        let targets = selectedSkills.filter { $0.isEnabled }
+        guard !targets.isEmpty else { return }
+        let trackedDirectoryNames = Set(selectedSkills.map { $0.directoryURL.lastPathComponent })
+        var errors: [String] = []
+        for skill in targets {
+            do {
+                try await activeSkillManager.disableSkill(skill)
+            } catch {
+                errors.append("\(skill.name): \(error.localizedDescription)")
+            }
+        }
+        do {
+            try await refreshProvider(selectedProvider)
+        } catch {
+            errors.append(error.localizedDescription)
+        }
+        selectedSkillIDs = Set(
+            skills
+                .filter { trackedDirectoryNames.contains($0.directoryURL.lastPathComponent) }
+                .map { $0.id }
+        )
+        if !errors.isEmpty {
+            errorMessage = errors.joined(separator: "\n")
         }
     }
 
@@ -318,12 +421,42 @@ final class AppViewModel {
         guard let skill = selectedSkill else { return }
         do {
             try await activeSkillManager.deleteSkill(skill, removeSource: removeSource)
-            selectedSkillPathByProvider[selectedProvider] = nil
-            selectedSkill = nil
+            selectedSkillIDs = []
             try await refreshProvider(selectedProvider)
             isShowingDeleteConfirmation = false
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteCurrentSelection(removeSource: Bool) async {
+        if selectedSkillIDs.count > 1 {
+            await deleteSelectedSkills(removeSource: removeSource)
+        } else {
+            await deleteSkill(removeSource: removeSource)
+        }
+    }
+
+    func deleteSelectedSkills(removeSource: Bool) async {
+        let targets = selectedSkills
+        guard !targets.isEmpty else { return }
+        var errors: [String] = []
+        for skill in targets {
+            do {
+                try await activeSkillManager.deleteSkill(skill, removeSource: removeSource)
+            } catch {
+                errors.append("\(skill.name): \(error.localizedDescription)")
+            }
+        }
+        selectedSkillIDs = []
+        isShowingDeleteConfirmation = false
+        do {
+            try await refreshProvider(selectedProvider)
+        } catch {
+            errors.append(error.localizedDescription)
+        }
+        if !errors.isEmpty {
+            errorMessage = errors.joined(separator: "\n")
         }
     }
 
@@ -419,36 +552,45 @@ final class AppViewModel {
 
     func saveAndNavigateToSkill() async {
         let pendingSkillPath = pendingSkillSelection?.directoryURL.path
+        let pendingPaths = pendingSelectionPaths
         let pendingProvider = pendingProviderSelection
         await saveEditing()
         guard !isEditing else { return }
 
         pendingSkillSelection = nil
+        pendingSelectionPaths = nil
         pendingProviderSelection = nil
 
         if let pendingProvider {
             switchProvider(to: pendingProvider)
         } else if let pendingSkillPath {
             selectSkillForCurrentProvider(at: pendingSkillPath, restartEditing: true)
+        } else if let pendingPaths {
+            applyPendingSelectionPaths(pendingPaths)
         }
     }
 
     func discardAndNavigateToSkill() {
         let pendingSkillPath = pendingSkillSelection?.directoryURL.path
+        let pendingPaths = pendingSelectionPaths
         let pendingProvider = pendingProviderSelection
         cancelEditing()
         pendingSkillSelection = nil
+        pendingSelectionPaths = nil
         pendingProviderSelection = nil
 
         if let pendingProvider {
             switchProvider(to: pendingProvider)
         } else if let pendingSkillPath {
             selectSkillForCurrentProvider(at: pendingSkillPath, restartEditing: true)
+        } else if let pendingPaths {
+            applyPendingSelectionPaths(pendingPaths)
         }
     }
 
     func cancelNavigationToSkill() {
         pendingSkillSelection = nil
+        pendingSelectionPaths = nil
         pendingProviderSelection = nil
     }
 
@@ -494,10 +636,10 @@ final class AppViewModel {
         let loadedSkills = manager(for: provider).skills
         skillsByProvider[provider] = loadedSkills
 
-        if let selectedPath = selectedSkillPathByProvider[provider],
-           !loadedSkills.contains(where: { $0.directoryURL.path == selectedPath }) {
-            selectedSkillPathByProvider[provider] = nil
-        }
+        let loadedPaths = Set(loadedSkills.map { $0.directoryURL.path })
+        var retainedPaths = selectedSkillPathsByProvider[provider] ?? []
+        retainedPaths.formIntersection(loadedPaths)
+        selectedSkillPathsByProvider[provider] = retainedPaths
 
         if provider == selectedProvider {
             restoreState(for: provider)
@@ -507,7 +649,12 @@ final class AppViewModel {
     private func restoreState(for provider: SkillProvider) {
         skills = skillsByProvider[provider, default: []]
         searchText = searchTextByProvider[provider, default: ""]
-        selectedSkill = selectedSkillFor(provider: provider, within: skills)
+        let paths = selectedSkillPathsByProvider[provider] ?? []
+        selectedSkillIDs = Set(
+            skills
+                .filter { paths.contains($0.directoryURL.path) }
+                .map { $0.id }
+        )
         applyFilter()
     }
 
@@ -520,22 +667,22 @@ final class AppViewModel {
     private func persistActiveState() {
         skillsByProvider[selectedProvider] = skills
         searchTextByProvider[selectedProvider] = searchText
-        selectedSkillPathByProvider[selectedProvider] = selectedSkill?.directoryURL.path
-    }
-
-    private func selectedSkillFor(provider: SkillProvider, within skills: [Skill]) -> Skill? {
-        guard let selectedPath = selectedSkillPathByProvider[provider] else {
-            return nil
-        }
-
-        return skills.first { $0.directoryURL.path == selectedPath }
     }
 
     private func selectSkillForCurrentProvider(at path: String, restartEditing: Bool) {
         guard let skill = skills.first(where: { $0.directoryURL.path == path }) else { return }
-        selectedSkill = skill
+        selectedSkillIDs = [skill.id]
         if restartEditing {
             startEditing()
         }
+    }
+
+    private func applyPendingSelectionPaths(_ paths: Set<String>) {
+        let matchedIDs = Set(
+            skills
+                .filter { paths.contains($0.directoryURL.path) }
+                .map { $0.id }
+        )
+        selectedSkillIDs = matchedIDs
     }
 }

@@ -52,7 +52,7 @@ final class SkillManager {
             throw SkillManagerError.skillsDirectoryNotFound(provider)
         }
 
-        if provider == .codex && !skillsDirExists {
+        if provider == .codex && !fileSystemManager.anySkillsDirectoryExists {
             skills = []
             return
         }
@@ -79,7 +79,12 @@ final class SkillManager {
                 description = ""
             }
 
-            let sourceRepoURL = metadata[dirName]?.sourceRepoURL
+            let sourceRepoURL = matchingMetadata(
+                forDirectoryName: dirName,
+                directoryURL: item.directoryURL,
+                symlinkTarget: item.symlinkTarget,
+                metadata: metadata
+            )?.sourceRepoURL
             let isEnabled: Bool
             if provider == .codex {
                 let skillMDURLs = skillMDURLs(
@@ -282,11 +287,12 @@ final class SkillManager {
     func deleteSkill(_ skill: Skill, removeSource: Bool) async throws {
         let metadataKey = skill.directoryURL.lastPathComponent
         let metadata = (try? metadataStore.load()) ?? [:]
+        let matchingMetadata = matchingMetadata(for: skill, metadata: metadata)
 
         if skill.isSymlink && removeSource {
             // Remove the symlink first
             try fileSystemManager.deleteSkill(at: skill.directoryURL)
-            if let clonedRepoPath = metadata[metadataKey]?.clonedRepoPath {
+            if let clonedRepoPath = matchingMetadata?.clonedRepoPath {
                 let repoURL = URL(fileURLWithPath: clonedRepoPath)
                 if FileManager.default.fileExists(atPath: repoURL.path) {
                     try fileSystemManager.deleteSkill(at: repoURL)
@@ -300,7 +306,7 @@ final class SkillManager {
 
         // Clean up metadata entry for URL-installed skills (FR-8.3)
         var updatedMetadata = metadata
-        if updatedMetadata.removeValue(forKey: metadataKey) != nil {
+        if matchingMetadata != nil, updatedMetadata.removeValue(forKey: metadataKey) != nil {
             try metadataStore.save(updatedMetadata)
         }
 
@@ -321,9 +327,8 @@ final class SkillManager {
         }
 
         let metadata = (try? metadataStore.load()) ?? [:]
-        let dirName = skill.directoryURL.lastPathComponent
 
-        guard let meta = metadata[dirName] else {
+        guard let meta = matchingMetadata(for: skill, metadata: metadata) else {
             throw SkillManagerError.noMetadata
         }
 
@@ -382,7 +387,7 @@ enum SkillManagerError: Error, LocalizedError {
             case .claudeCode:
                 return "Skills directory not found. Please ensure ~/.claude/skills/ exists."
             case .codex:
-                return "Skills directory not found. Please ensure ~/.agents/skills/ exists."
+                return "Skills directory not found. Please ensure ~/.agents/skills/ or ~/.codex/skills/ exists."
             }
         case .disabledDirectoryUnsupported(let provider):
             return "\(provider.displayName) does not use a disabled skills directory."
@@ -391,6 +396,35 @@ enum SkillManagerError: Error, LocalizedError {
 }
 
 private extension SkillManager {
+    func matchingMetadata(for skill: Skill, metadata: [String: SkillMetadata]) -> SkillMetadata? {
+        matchingMetadata(
+            forDirectoryName: skill.directoryURL.lastPathComponent,
+            directoryURL: skill.directoryURL,
+            symlinkTarget: skill.symlinkTarget,
+            metadata: metadata
+        )
+    }
+
+    func matchingMetadata(
+        forDirectoryName directoryName: String,
+        directoryURL: URL,
+        symlinkTarget: URL?,
+        metadata: [String: SkillMetadata]
+    ) -> SkillMetadata? {
+        guard let entry = metadata[directoryName] else {
+            return nil
+        }
+
+        let clonedRepoURL = URL(fileURLWithPath: entry.clonedRepoPath).standardizedFileURL
+        let candidateURLs = [directoryURL, symlinkTarget].compactMap { $0?.standardizedFileURL }
+
+        guard candidateURLs.contains(where: { $0.isDescendant(of: clonedRepoURL) }) else {
+            return nil
+        }
+
+        return entry
+    }
+
     func skillMDURLs(directoryURL: URL, symlinkTarget: URL?) -> [URL] {
         var urls = [directoryURL.appendingPathComponent("SKILL.md")]
         if let symlinkTarget {
@@ -406,5 +440,14 @@ private extension SkillManager {
             return []
         }
         return [symlinkTarget.appendingPathComponent("SKILL.md")]
+    }
+}
+
+private extension URL {
+    func isDescendant(of ancestor: URL) -> Bool {
+        let path = standardizedFileURL.path
+        let ancestorPath = ancestor.standardizedFileURL.path
+
+        return path == ancestorPath || path.hasPrefix(ancestorPath + "/")
     }
 }

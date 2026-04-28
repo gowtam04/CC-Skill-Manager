@@ -46,7 +46,7 @@ Agent Skill Manager is a native macOS desktop application for managing Claude Co
 1. On launch and on every app-focus event (`.onReceive(NotificationCenter...scenePhase)`), the app scans the selected provider's user-level skill locations.
 2. For Claude Code, each subdirectory containing a `SKILL.md` file under `~/.claude/skills/` is treated as a skill.
 3. The app also scans `~/.claude/skills-disabled/` to discover disabled Claude Code skills.
-4. For Codex, each direct child directory containing a `SKILL.md` file under `~/.agents/skills/` is treated as a personal skill.
+4. For Codex, each direct child directory containing a `SKILL.md` file under `~/.agents/skills/` or `~/.codex/skills/` is treated as a personal skill.
 5. For each skill, the app parses the SKILL.md YAML frontmatter to extract:
    - `name` (string, required)
    - `description` (string, required)
@@ -164,7 +164,7 @@ Agent Skill Manager is a native macOS desktop application for managing Claude Co
 
 ### NFR-3: Data Safety
 
-- The app never modifies files outside of `~/.claude/skills/`, `~/.claude/skills-disabled/`, `~/.agents/skills/`, `~/.codex/config.toml`, and `~/Library/Application Support/Agent-Skill-Manager/` — except when the user explicitly chooses "Remove link and source" for a symlinked skill.
+- The app never modifies files outside of `~/.claude/skills/`, `~/.claude/skills-disabled/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.codex/config.toml`, and `~/Library/Application Support/Agent-Skill-Manager/` — except when the user explicitly chooses "Remove link and source" for a symlinked skill.
 - All destructive operations (delete, overwrite) require user confirmation.
 - The editor warns before overwriting externally-modified files.
 
@@ -275,7 +275,8 @@ Stored at provider-specific paths:
 |------|---------|
 | `~/.claude/skills/` | Active Claude Code skills |
 | `~/.claude/skills-disabled/` | Disabled Claude Code skills |
-| `~/.agents/skills/` | Personal Codex skills |
+| `~/.agents/skills/` | Primary personal Codex skills and import/install target |
+| `~/.codex/skills/` | Additional personal Codex skills discovered by the app |
 | `~/.codex/config.toml` | Codex enable/disable overrides |
 | `~/Library/Application Support/Agent-Skill-Manager/repos/` | Cloned Git repos for URL-installed skills |
 | `~/Library/Application Support/Agent-Skill-Manager/metadata.json` | Claude install metadata |

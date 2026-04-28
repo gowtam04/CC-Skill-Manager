@@ -13,7 +13,7 @@ xcodegen generate
 # Build
 xcodebuild build -project AgentSkillManager.xcodeproj -scheme AgentSkillManager -destination 'platform=macOS'
 
-# Run all tests (109 tests across 8 suites)
+# Run all tests
 xcodebuild test -project AgentSkillManager.xcodeproj -scheme AgentSkillManager -destination 'platform=macOS'
 
 # Run a single test suite
@@ -56,7 +56,8 @@ The app manages skills across these directories:
 |------|---------|
 | `~/.claude/skills/` | Active Claude Code skills |
 | `~/.claude/skills-disabled/` | Disabled Claude Code skills |
-| `~/.agents/skills/` | Personal Codex skills |
+| `~/.agents/skills/` | Primary personal Codex skills and import/install target |
+| `~/.codex/skills/` | Additional personal Codex skills discovered by the app |
 | `~/.codex/config.toml` | Codex skill enable/disable overrides via `[[skills.config]]` |
 | `~/Library/Application Support/Agent-Skill-Manager/repos/` | Cloned Git repos for URL-installed skills |
 | `~/Library/Application Support/Agent-Skill-Manager/metadata.json` | Claude install metadata (source URLs, timestamps) |

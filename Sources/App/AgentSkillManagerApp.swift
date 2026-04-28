@@ -9,6 +9,7 @@ struct AgentSkillManagerApp: App {
         let claudeSkillsDir = homeDir.appendingPathComponent(".claude/skills", isDirectory: true)
         let claudeDisabledDir = homeDir.appendingPathComponent(".claude/skills-disabled", isDirectory: true)
         let codexSkillsDir = homeDir.appendingPathComponent(".agents/skills", isDirectory: true)
+        let codexUserSkillsDir = homeDir.appendingPathComponent(".codex/skills", isDirectory: true)
         let codexConfigURL = homeDir.appendingPathComponent(".codex/config.toml")
 
         let appSupportDir: URL
@@ -34,7 +35,8 @@ struct AgentSkillManagerApp: App {
         )
 
         let codexFileSystemManager = FileSystemManager(
-            skillsDirectoryURL: codexSkillsDir
+            skillsDirectoryURL: codexSkillsDir,
+            additionalSkillsDirectoryURLs: [codexUserSkillsDir]
         )
         let codexMetadataStore = MetadataStore(
             fileURL: appSupportDir.appendingPathComponent("codex-metadata.json")

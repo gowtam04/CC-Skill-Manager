@@ -137,6 +137,30 @@ struct FileSystemManagerTests {
         #expect(results.first?.isEnabled == true)
     }
 
+    @Test("Scan finds skills in primary and additional directories")
+    func scanFindsPrimaryAndAdditionalDirectories() throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FileSystemManagerTests-\(UUID().uuidString)", isDirectory: true)
+        let primarySkillsDir = tempRoot.appendingPathComponent("agents-skills", isDirectory: true)
+        let additionalSkillsDir = tempRoot.appendingPathComponent("codex-skills", isDirectory: true)
+        defer { cleanUp(tempRoot) }
+
+        try FileManager.default.createDirectory(at: primarySkillsDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: additionalSkillsDir, withIntermediateDirectories: true)
+        try createSkillDirectory(named: "agents-skill", in: primarySkillsDir)
+        try createSkillDirectory(named: "codex-skill", in: additionalSkillsDir)
+
+        let manager = FileSystemManager(
+            skillsDirectoryURL: primarySkillsDir,
+            additionalSkillsDirectoryURLs: [additionalSkillsDir]
+        )
+        let results = try manager.scanSkills()
+
+        #expect(results.count == 2)
+        #expect(results.map(\.directoryURL.lastPathComponent).sorted() == ["agents-skill", "codex-skill"])
+        #expect(results.allSatisfy { $0.isEnabled })
+    }
+
     @Test("Scan ignores directories without SKILL.md")
     func scanIgnoresDirectoriesWithoutSkillMD() throws {
         let (tempRoot, skillsDir, disabledDir) = try makeTempEnvironment()

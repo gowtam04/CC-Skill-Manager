@@ -13,10 +13,16 @@ struct FileSystemManager: Sendable {
 
     let skillsDirectoryURL: URL
     let disabledDirectoryURL: URL?
+    let additionalSkillsDirectoryURLs: [URL]
 
-    init(skillsDirectoryURL: URL, disabledDirectoryURL: URL? = nil) {
+    init(
+        skillsDirectoryURL: URL,
+        disabledDirectoryURL: URL? = nil,
+        additionalSkillsDirectoryURLs: [URL] = []
+    ) {
         self.skillsDirectoryURL = skillsDirectoryURL
         self.disabledDirectoryURL = disabledDirectoryURL
+        self.additionalSkillsDirectoryURLs = additionalSkillsDirectoryURLs
     }
 
     // MARK: - Scanning
@@ -24,9 +30,11 @@ struct FileSystemManager: Sendable {
     func scanSkills() throws -> [DiscoveredSkill] {
         var results: [DiscoveredSkill] = []
 
-        if FileManager.default.fileExists(atPath: skillsDirectoryURL.path) {
-            let enabledSkills = try scanDirectory(skillsDirectoryURL, isEnabled: true)
-            results.append(contentsOf: enabledSkills)
+        for directoryURL in skillScanDirectoryURLs {
+            if FileManager.default.fileExists(atPath: directoryURL.path) {
+                let enabledSkills = try scanDirectory(directoryURL, isEnabled: true)
+                results.append(contentsOf: enabledSkills)
+            }
         }
 
         if let disabledDirectoryURL,
@@ -36,6 +44,24 @@ struct FileSystemManager: Sendable {
         }
 
         return results
+    }
+
+    var skillScanDirectoryURLs: [URL] {
+        let urls = [skillsDirectoryURL] + additionalSkillsDirectoryURLs
+        var seenPaths: Set<String> = []
+        var uniqueURLs: [URL] = []
+
+        for url in urls {
+            let standardizedURL = url.standardizedFileURL
+            guard seenPaths.insert(standardizedURL.path).inserted else { continue }
+            uniqueURLs.append(standardizedURL)
+        }
+
+        return uniqueURLs
+    }
+
+    var anySkillsDirectoryExists: Bool {
+        skillScanDirectoryURLs.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     private func scanDirectory(_ directoryURL: URL, isEnabled: Bool) throws -> [DiscoveredSkill] {
@@ -130,8 +156,10 @@ struct FileSystemManager: Sendable {
 
     func skillExists(named name: String) -> Bool {
         let fm = FileManager.default
-        if fm.fileExists(atPath: skillsDirectoryURL.appendingPathComponent(name).path) {
-            return true
+        for directoryURL in skillScanDirectoryURLs {
+            if fm.fileExists(atPath: directoryURL.appendingPathComponent(name).path) {
+                return true
+            }
         }
 
         if let disabledDirectoryURL {
